@@ -1,0 +1,75 @@
+#!/bin/bash
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+helpers="$root/.cursor/skills/verify-dynamic-agents/helpers"
+action="${1:-}"
+run="${2:-}"
+if [[ ! "$run" =~ ^[a-z0-9]{1,32}$ ]]; then
+  echo 'Usage: control <launch|doctor|snapshot|duration|menu|press|set|type|cleanup> <lowercase-alphanumeric-run-id> [arguments]' >&2
+  exit 2
+fi
+scratch="$root/.build/verify-dynamic-agents/$run"
+evidence="$root/.build/verify-dynamic-agents-evidence/$run"
+app="$scratch/DynamicAgents.app"
+bundle="dev.local.dynamicagents.verify$run"
+mkdir -p "$root/.build/verify-dynamic-agents" "$root/.build/verify-dynamic-agents-evidence"
+process_matches() {
+  local pid="${1:-}"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  [[ "$(ps -p "$pid" -o comm= 2>/dev/null || true)" == "$app/Contents/MacOS/DynamicAgents" ]]
+}
+cleanup() {
+  if [[ -L "$scratch" ]]; then echo 'Refusing a symlinked scratch directory.' >&2; return 1; fi
+  if [[ ! -d "$scratch" ]]; then echo "No verification instance; evidence retained at $evidence"; return; fi
+  if [[ ! -f "$scratch/bundle-id" || "$(<"$scratch/bundle-id")" != "$bundle" ]]; then
+    echo 'Scratch ownership marker missing; refusing cleanup.' >&2; return 1
+  fi
+  if [[ -f "$scratch/pid" ]]; then
+    local pid
+    pid="$(<"$scratch/pid")"
+    if process_matches "$pid"; then
+      kill -TERM "$pid"
+      for _ in $(seq 1 50); do process_matches "$pid" || break; sleep 0.1; done
+      if process_matches "$pid"; then echo 'Verification process did not exit; scratch retained.' >&2; return 1; fi
+    elif kill -0 "$pid" 2>/dev/null; then
+      echo 'Recorded PID belongs to another process; scratch retained.' >&2; return 1
+    fi
+  fi
+  defaults delete "$bundle" >/dev/null 2>&1 || true
+  if [[ -d "$scratch" ]]; then command -v trash >/dev/null; trash "$scratch"; fi
+  echo "Cleaned verification instance; evidence retained at $evidence"
+}
+case "$action" in
+  launch)
+    [[ ! -e "$scratch" && ! -e "$evidence" ]] || { echo 'Run ID already exists; choose another.' >&2; exit 1; }
+    if defaults read "$bundle" >/dev/null 2>&1; then echo 'Preferences domain already exists; choose another run ID.' >&2; exit 1; fi
+    mkdir -p "$scratch" "$evidence"
+    printf '%s\n' "$bundle" > "$scratch/bundle-id"
+    trap 'code=$?; if [[ $code -ne 0 ]]; then cleanup >&2 || true; fi' EXIT
+    swift build --build-system native -c debug -j 4 > "$evidence/build.log" 2>&1
+    bin="$(swift build --build-system native -c debug --show-bin-path 2>> "$evidence/build.log")"
+    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+    cp "$bin/DynamicAgents" "$app/Contents/MacOS/DynamicAgents"
+    cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
+    ditto "$bin/DynamicAgents_AgentCore.bundle" "$app/Contents/Resources/DynamicAgents_AgentCore.bundle"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle" "$app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivities false' "$app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 15.0' "$app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$app/Contents/Info.plist"
+    codesign --force --sign - "$app" > "$evidence/codesign.log" 2>&1
+    swiftc "$helpers/ax.swift" -o "$scratch/ax" > "$evidence/ax-build.log" 2>&1
+    VERIFY_HERDR_TRACE="$evidence/herdr-commands.log" HERDR_BIN="$helpers/herdr-fixture" \
+      "$app/Contents/MacOS/DynamicAgents" -AppleLanguages '(en)' > "$evidence/app.log" 2>&1 &
+    echo "$!" > "$scratch/pid"
+    "$0" doctor "$run" | tee "$evidence/doctor.txt"
+    echo "Evidence: $evidence"
+    ;;
+  doctor|snapshot|duration|menu|press|set|type)
+    [[ -f "$scratch/pid" && -x "$scratch/ax" ]] || { echo 'Run was not launched.' >&2; exit 1; }
+    pid="$(<"$scratch/pid")"
+    process_matches "$pid" || { echo 'The recorded verification process is not running.' >&2; exit 1; }
+    "$scratch/ax" "$pid" "$bundle" "$action" "${@:3}"
+    ;;
+  cleanup) cleanup ;;
+  *) echo 'Unknown action.' >&2; exit 2 ;;
+esac
