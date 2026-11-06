@@ -1,0 +1,8 @@
+.build/
+dist/
+.DS_Store
+*.xcuserstate
+xcuserdata/
+Resources/AppIcon.icns
+docs/images/
+docs/verification/

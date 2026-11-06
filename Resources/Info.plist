@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>Dynamic Agents</string>
+<key>CFBundleDisplayName</key><string>Dynamic Agents</string>
+<key>CFBundleIdentifier</key><string>dev.local.dynamicagents</string>
+<key>CFBundleExecutable</key><string>DynamicAgents</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
+<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSMinimumSystemVersion</key><string>27.3</string>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>NSHighResolutionCapable</key><true/>
+<key>NSSupportsLiveActivities</key><true/>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleURLName</key><string>dev.local.dynamicagents</string>
+<key>CFBundleURLSchemes</key><array><string>dynamicagents</string></array>
+</dict></array>
+</dict></plist>
