@@ -63,6 +63,7 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
     public let displayAgent: String?
     public let terminalID: String?
     public let completionSequence: UInt64?
+    public let projectName: String?
     public let hostBundleID: String?
     public let hookCompletedAt: Date?
     public let isHookSession: Bool
@@ -82,6 +83,7 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
         id = try c.decode(String.self, forKey: .id)
         paneID = id
         herdrSession = nil
+        projectName = nil
         hostBundleID = nil
         hookCompletedAt = nil
         isHookSession = false
@@ -100,17 +102,18 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
             ?? AgentKind(rawValue: kind ?? "").displayName
     }
     public init(hookID: String, kind: String, title: String, project: String, status: AgentStatus,
-                sequence: UInt64, completedAt: Date?, hostBundleID: String?, hostName: String? = nil) {
+                sequence: UInt64, completedAt: Date?, hostBundleID: String?, hostName: String? = nil, displayName: String? = nil) {
         id = "hook:" + String(hookID.prefix(40))
         paneID = id
         herdrSession = nil
         workspaceID = "desktop:" + project
+        projectName = project
         self.kind = kind
         self.title = title
         self.status = status
         cwd = ""
         name = nil
-        displayAgent = hostName.map { AgentKind(rawValue: kind).displayName + " · " + $0 }
+        displayAgent = displayName ?? hostName.map { AgentKind(rawValue: kind).displayName + " · " + $0 }
         terminalID = "hook:" + hookID
         completionSequence = status == .done ? sequence : nil
         self.hookCompletedAt = completedAt

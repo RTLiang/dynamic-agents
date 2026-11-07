@@ -86,13 +86,13 @@ final class AgentStore {
             guard app.activationPolicy == .regular, let bundle = app.bundleIdentifier, let url = app.bundleURL else { return nil }
             return TerminalApplication(pid: app.processIdentifier, bundleID: bundle, name: app.localizedName ?? bundle, path: url.path)
         }
-        let events = await Task.detached(priority: .utility) { DesktopHooks.readEvents() }.value
-        let desktopAgents = events.compactMap { event in
+        let hookSnapshot = await Task.detached(priority: .utility) { await DesktopHooks.capture() }.value
+        let desktopAgents = hookSnapshot.events.compactMap { event in
             let hosts = applications.filter { launchDates[$0.pid].map { $0.timeIntervalSince1970 <= event.timestamp } ?? false }
-            return event.agent(applications: hosts, now: .now)
+            return event.agent(applications: hosts, now: .now, processes: hookSnapshot.processes)
         }
         agents = (herdrConnected ? herdrAgents : herdrAgents.map { $0.withStatus(.unknown) }) + desktopAgents
-        let desktopWorkspaces = Dictionary(desktopAgents.map { ($0.workspaceID, $0.title) }, uniquingKeysWith: { first, _ in first })
+        let desktopWorkspaces = Dictionary(desktopAgents.map { ($0.workspaceID, $0.projectName ?? $0.kindName) }, uniquingKeysWith: { first, _ in first })
         workspaces = herdrWorkspaces + desktopWorkspaces.map { Workspace(id: $0.key, label: $0.value) }
         connected = herdrConnected || !desktopAgents.isEmpty
         if activityFeed.observe(agents, at: .now), let data = try? JSONEncoder().encode(activityFeed) {
@@ -140,12 +140,17 @@ final class AgentStore {
         let preferredTerminal = terminalBundleID
         defer { focusingID = nil }
         if agent.isHookSession {
-            let events = await Task.detached { DesktopHooks.readEvents() }.value
-            guard let event = events.first(where: { "hook:" + $0.id == agent.terminalID }),
+            let hookSnapshot = await Task.detached { await DesktopHooks.capture() }.value
+            guard let event = hookSnapshot.events.first(where: { "hook:" + $0.id == agent.terminalID }),
                   let bundle = agent.hostBundleID,
                   let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first(where: {
                       event.ancestorPIDs.contains($0.processIdentifier) && ($0.launchDate.map { $0.timeIntervalSince1970 <= event.timestamp } ?? false)
                   }) else {
+                actionError = L10n.text("The hook session's host app is unavailable.")
+                return
+            }
+            let observedApp = TerminalApplication(pid: app.processIdentifier, bundleID: bundle, name: app.localizedName ?? bundle, path: app.bundleURL?.path ?? "")
+            guard event.agent(applications: [observedApp], now: .now, processes: hookSnapshot.processes)?.hostBundleID == bundle else {
                 actionError = L10n.text("The hook session's host app is unavailable.")
                 return
             }

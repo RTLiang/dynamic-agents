@@ -154,4 +154,5 @@
 "Updates" = "更新";
 "View Release" = "查看发布页面";
 "herdr Window" = "herdr 窗口";
+"Unknown Project" = "未知项目";
 "The terminal app instance has changed or is ambiguous. Refresh before selecting its window." = "终端 App 实例已变化或存在多个候选，请刷新后重新选择窗口。";

@@ -9,8 +9,9 @@ public struct ProcessRecord: Sendable {
     public let tty: String?
     public let sessionHint: String?
     public let socketHint: String?
+    public let startedAt: Date?
 
-    public init(pid: Int32, parentPID: Int32, executable: String, arguments: [String]? = nil, tty: String? = nil, sessionHint: String? = nil, socketHint: String? = nil) {
+    public init(pid: Int32, parentPID: Int32, executable: String, arguments: [String]? = nil, tty: String? = nil, sessionHint: String? = nil, socketHint: String? = nil, startedAt: Date? = nil) {
         self.pid = pid
         self.parentPID = parentPID
         self.executable = executable
@@ -18,6 +19,7 @@ public struct ProcessRecord: Sendable {
         self.tty = tty
         self.sessionHint = sessionHint
         self.socketHint = socketHint
+        self.startedAt = startedAt
     }
 }
 
@@ -110,13 +112,15 @@ public enum TerminalResolver {
 }
 
 public enum ProcessInventory {
-    public static func capture(herdrExecutable: String) async throws -> [ProcessRecord] {
+    public static func capture(herdrExecutable: String, onlyPIDs: Set<Int32>? = nil) async throws -> [ProcessRecord] {
+        if onlyPIDs?.isEmpty == true { return [] }
         let expected = URL(fileURLWithPath: herdrExecutable).resolvingSymlinksInPath().path
         // proc_pidinfo denies access to root-owned login processes in a terminal's ancestry.
         let output = try await CommandRunner.run(executable: "/bin/ps", arguments: ["-axo", "pid=,ppid=,uid=,tty="])
         return String(decoding: output, as: UTF8.self).split(separator: "\n").compactMap { line in
             let fields = line.split(whereSeparator: \.isWhitespace)
             guard fields.count == 4, let pid = Int32(fields[0]), let parent = Int32(fields[1]), let uid = UInt32(fields[2]) else { return nil }
+            guard onlyPIDs?.contains(pid) ?? true else { return nil }
             let rawTTY = String(fields[3])
             let tty = rawTTY == "??" || rawTTY == "?" ? nil : (rawTTY.hasPrefix("/dev/") ? rawTTY : "/dev/" + rawTTY)
             var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
@@ -124,8 +128,9 @@ public enum ProcessInventory {
             let pathResult = proc_pidpath(pid, &path, pathSize)
             let executable = pathResult > 0 ? path.withUnsafeBufferPointer { String(cString: $0.baseAddress!) } : ""
             let isHerdr = executable == expected || URL(fileURLWithPath: executable).lastPathComponent == "herdr"
-            let context = isHerdr && uid == getuid() ? readContext(pid: pid) : (nil, nil, nil)
-            return ProcessRecord(pid: pid, parentPID: parent, executable: executable, arguments: context.0, tty: tty, sessionHint: context.1, socketHint: context.2)
+            let context = onlyPIDs == nil && isHerdr && uid == getuid() ? readContext(pid: pid) : (nil, nil, nil)
+            let start = onlyPIDs != nil && uid == getuid() ? startedAt(pid: pid) : nil
+            return ProcessRecord(pid: pid, parentPID: parent, executable: executable, arguments: context.0, tty: tty, sessionHint: context.1, socketHint: context.2, startedAt: start)
         }
     }
 

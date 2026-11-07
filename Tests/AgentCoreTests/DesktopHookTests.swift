@@ -2,6 +2,8 @@ import Foundation
 import Testing
 @testable import AgentCore
 
+private let hookProcesses = [ProcessRecord(pid: 51, parentPID: 50, executable: "/usr/local/bin/codex", startedAt: .distantPast)]
+
 private func hookEvent(status: String, source: String = "codex", age: TimeInterval = 0, ancestors: [Int32] = [51, 50]) throws -> DesktopHookEvent {
     let data: [String: Any] = ["id": String(repeating: "a", count: 64), "source": source, "status": status,
                                "sequence": 1234, "timestamp": Date.now.timeIntervalSince1970 - age,
@@ -12,12 +14,12 @@ private func hookEvent(status: String, source: String = "codex", age: TimeInterv
 @Test func desktopEventUsesObservedHostAndNeverTreatsOpenAppAsTaskActivity() throws {
     let app = TerminalApplication(pid: 50, bundleID: "example.desktop", name: "Example Desktop", path: "/Applications/Example.app")
     let event = try hookEvent(status: "working")
-    let agent = try #require(event.agent(applications: [app], now: .now))
+    let agent = try #require(event.agent(applications: [app], now: .now, processes: hookProcesses))
     #expect(agent.isHookSession && agent.status == .working)
     #expect(agent.hostBundleID == "example.desktop")
     #expect(agent.id.hasPrefix("hook:") && agent.kind == "codex")
     #expect(event.agent(applications: [], now: .now)?.status == .unknown)
-    #expect(try hookEvent(status: "idle").agent(applications: [app], now: .now)?.status == .idle)
+    #expect(try hookEvent(status: "idle").agent(applications: [app], now: .now, processes: hookProcesses)?.status == .idle)
 }
 
 @Test func desktopReportedCompletionTimeSurvivesFirstReadAndDurationChanges() throws {

@@ -9,19 +9,51 @@ public struct DesktopHookEvent: Decodable, Sendable {
     public let project: String
     public let ancestorPIDs: [Int32]
 
-    public func agent(applications: [TerminalApplication], now: Date) -> Agent? {
-        guard id.count == 64, id.allSatisfy(\.isHexDigit), DesktopHookSource(rawValue: source) != nil,
-              timestamp.isFinite, timestamp <= now.timeIntervalSince1970 + 5,
-              now.timeIntervalSince1970 - timestamp < 86_400, status != "ended" else { return nil }
-        let host = ancestorPIDs.lazy.compactMap { pid in applications.first { $0.pid == pid } }.first
+    public func isCurrent(at now: Date) -> Bool {
+        id.count == 64 && id.allSatisfy(\.isHexDigit) && DesktopHookSource(rawValue: source) != nil
+            && timestamp.isFinite && timestamp <= now.timeIntervalSince1970 + 5
+            && now.timeIntervalSince1970 - timestamp < 86_400 && status != "ended"
+            && ancestorPIDs.count <= 40 && ancestorPIDs.allSatisfy { $0 > 1 }
+            && Set(ancestorPIDs).count == ancestorPIDs.count
+    }
+
+    public func agent(applications: [TerminalApplication], now: Date, processes: [ProcessRecord] = []) -> Agent? {
+        guard isCurrent(at: now) else { return nil }
+        let observedHost = ancestorPIDs.lazy.compactMap { pid in applications.first { $0.pid == pid } }.first
+        let host = source != "codex" || hasLiveCodex(in: processes, host: observedHost) ? observedHost : nil
         let rawStatus = AgentStatus(serverValue: status)
-        let effective = host == nil && rawStatus == .working ? AgentStatus.unknown : rawStatus
-        return Agent(hookID: id, kind: source == "copilot" ? "copilot" : source,
-                     title: (project.isEmpty ? AgentKind(rawValue: source).displayName : project) + " · " + String(id.prefix(6)),
-                     project: project.isEmpty ? AgentKind(rawValue: source).displayName : project,
+        let effective = host == nil && (rawStatus == .working || rawStatus == .blocked) ? AgentStatus.unknown : rawStatus
+        let kind = source == "copilot" ? "copilot" : source
+        let kindName = AgentKind(rawValue: kind).displayName
+        let displayName: String?
+        if source == "codex" {
+            if observedHost?.bundleID.lowercased() == "com.openai.codex" { displayName = "Codex App" }
+            else if let host { displayName = "Codex CLI · " + host.name }
+            else { displayName = "Codex" }
+        } else { displayName = nil }
+        let displayHost = rawStatus == .done ? observedHost : host
+        return Agent(hookID: id, kind: kind, title: kindName + " · " + String(id.prefix(6)),
+                     project: project.isEmpty ? L10n.text("Unknown Project") : project,
                      status: effective, sequence: sequence,
                      completedAt: rawStatus == .done ? Date(timeIntervalSince1970: timestamp) : nil,
-                     hostBundleID: host?.bundleID, hostName: host?.name)
+                     hostBundleID: displayHost?.bundleID, hostName: displayHost?.name, displayName: displayName)
+    }
+
+    private func hasLiveCodex(in processes: [ProcessRecord], host: TerminalApplication?) -> Bool {
+        guard let host else { return false }
+        let byPID = Dictionary(processes.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        for pid in ancestorPIDs {
+            guard let runtime = byPID[pid], URL(fileURLWithPath: runtime.executable).lastPathComponent.lowercased() == "codex",
+                  let started = runtime.startedAt, started.timeIntervalSince1970 <= timestamp else { continue }
+            var parent = runtime.parentPID
+            var visited = Set<Int32>()
+            while parent > 1, visited.insert(parent).inserted {
+                if parent == host.pid { return true }
+                guard let next = byPID[parent], next.startedAt.map({ $0.timeIntervalSince1970 <= timestamp }) ?? true else { break }
+                parent = next.parentPID
+            }
+        }
+        return false
     }
 }
 
@@ -62,6 +94,13 @@ public enum DesktopHooks {
         let data = try await CommandRunner.run(executable: "/usr/bin/env", arguments: ["python3", script.path, action, source.rawValue])
         struct Result: Decodable { let installed: Bool }
         return try JSONDecoder().decode(Result.self, from: data).installed
+    }
+
+    public static func capture(in directory: URL = Self.directory, at now: Date = .now) async -> (events: [DesktopHookEvent], processes: [ProcessRecord]) {
+        let events = readEvents(in: directory).filter { $0.isCurrent(at: now) }
+        let pids = Set(events.filter { $0.source == "codex" }.flatMap(\.ancestorPIDs))
+        let processes = (try? await ProcessInventory.capture(herdrExecutable: HerdrClient.defaultExecutable, onlyPIDs: pids)) ?? []
+        return (events, processes)
     }
 
     public static func readEvents(in directory: URL = Self.directory) -> [DesktopHookEvent] {
