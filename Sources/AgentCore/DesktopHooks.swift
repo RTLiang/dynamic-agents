@@ -8,6 +8,13 @@ public struct DesktopHookEvent: Decodable, Sendable {
     public let timestamp: TimeInterval
     public let project: String
     public let ancestorPIDs: [Int32]
+    public private(set) var title: String?
+
+    public func withTitle(_ value: String?) -> Self {
+        var event = self
+        event.title = SessionTitle.normalized(value)
+        return event
+    }
 
     public func isCurrent(at now: Date) -> Bool {
         id.count == 64 && id.allSatisfy(\.isHexDigit) && DesktopHookSource(rawValue: source) != nil
@@ -32,7 +39,7 @@ public struct DesktopHookEvent: Decodable, Sendable {
             else { displayName = "Codex" }
         } else { displayName = nil }
         let displayHost = rawStatus == .done ? observedHost : host
-        return Agent(hookID: id, kind: kind, title: kindName + " · " + String(id.prefix(6)),
+        return Agent(hookID: id, kind: kind, title: SessionTitle.normalized(title) ?? kindName + " · " + String(id.prefix(6)),
                      project: project.isEmpty ? L10n.text("Unknown Project") : project,
                      status: effective, sequence: sequence,
                      completedAt: rawStatus == .done ? Date(timeIntervalSince1970: timestamp) : nil,
@@ -109,7 +116,12 @@ public enum DesktopHooks {
     }
 
     public static func capture(in directory: URL = Self.directory, at now: Date = .now) async -> (events: [DesktopHookEvent], processes: [ProcessRecord]) {
-        let events = readEvents(in: directory).filter { $0.isCurrent(at: now) }
+        let reports = readEvents(in: directory).filter { $0.isCurrent(at: now) }
+        let codexIDs = Set(reports.filter { $0.source == "codex" }.map(\.id))
+        let titles = await CodexSessionTitles.shared.titles(for: codexIDs)
+        let events = reports.map { event in
+            event.source == "codex" ? event.withTitle(titles[event.id] ?? event.title) : event
+        }
         let pids = Set(events.filter { $0.source == "codex" }.flatMap(\.ancestorPIDs))
         let processes = (try? await ProcessInventory.capture(herdrExecutable: HerdrClient.defaultExecutable, onlyPIDs: pids)) ?? []
         return (events, processes)
