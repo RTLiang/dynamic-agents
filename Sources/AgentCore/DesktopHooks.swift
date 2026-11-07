@@ -43,7 +43,8 @@ public struct DesktopHookEvent: Decodable, Sendable {
                      project: project.isEmpty ? L10n.text("Unknown Project") : project,
                      status: effective, sequence: sequence,
                      completedAt: rawStatus == .done ? Date(timeIntervalSince1970: timestamp) : nil,
-                     hostBundleID: displayHost?.bundleID, hostName: displayHost?.name, displayName: displayName)
+                     hostBundleID: displayHost?.bundleID, hostName: displayHost?.name, displayName: displayName,
+                     isSessionAvailable: host != nil)
     }
 
     private func hasLiveCodex(in processes: [ProcessRecord], host: TerminalApplication?) -> Bool {

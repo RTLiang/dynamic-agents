@@ -6,10 +6,11 @@ public enum AgentStatus: String, CaseIterable, Sendable, Codable {
 
     public init(serverValue: String?) { self = Self(rawValue: serverValue ?? "") ?? .unknown }
     public var priority: Int {
-        switch self { case .blocked: 0; case .done: 1; case .working: 2; case .idle: 3; case .unknown: 4 }
+        switch self { case .working: 0; case .blocked: 1; case .done: 2; case .idle: 3; case .unknown: 4 }
     }
-    public var label: String {
-        switch self { case .blocked: L10n.text("Needs Input"); case .done: L10n.text("Completed"); case .working: L10n.text("Running"); case .idle: L10n.text("Idle"); case .unknown: L10n.text("Unknown") }
+    public var label: String { label(locale: nil) }
+    public func label(locale: Locale?) -> String {
+        switch self { case .blocked: L10n.text("Needs Input", locale: locale); case .done: L10n.text("Completed", locale: locale); case .working: L10n.text("Running", locale: locale); case .idle: L10n.text("Idle", locale: locale); case .unknown: L10n.text("Unknown", locale: locale) }
     }
 }
 
@@ -67,6 +68,7 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
     public let hostBundleID: String?
     public let hookCompletedAt: Date?
     public let isHookSession: Bool
+    public let isSessionAvailable: Bool
     public var kindName: String {
         if let displayAgent, !displayAgent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return displayAgent }
         return AgentKind(rawValue: kind ?? "").displayName
@@ -87,6 +89,7 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
         hostBundleID = nil
         hookCompletedAt = nil
         isHookSession = false
+        isSessionAvailable = true
         workspaceID = try c.decode(String.self, forKey: .workspaceID)
         kind = try c.decodeIfPresent(String.self, forKey: .kind)
         status = AgentStatus(serverValue: try c.decodeIfPresent(String.self, forKey: .status))
@@ -102,7 +105,8 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
             ?? AgentKind(rawValue: kind ?? "").displayName
     }
     public init(hookID: String, kind: String, title: String, project: String, status: AgentStatus,
-                sequence: UInt64, completedAt: Date?, hostBundleID: String?, hostName: String? = nil, displayName: String? = nil) {
+                sequence: UInt64, completedAt: Date?, hostBundleID: String?, hostName: String? = nil, displayName: String? = nil,
+                isSessionAvailable: Bool? = nil) {
         id = "hook:" + String(hookID.prefix(40))
         paneID = id
         herdrSession = nil
@@ -119,6 +123,7 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
         self.hookCompletedAt = completedAt
         self.hostBundleID = hostBundleID
         isHookSession = true
+        self.isSessionAvailable = isSessionAvailable ?? (hostBundleID != nil)
     }
 
     public func scoped(to session: String) -> Self {

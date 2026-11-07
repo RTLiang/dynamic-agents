@@ -8,6 +8,10 @@
 "Desktop actions open the host app; selecting an exact conversation is not supported." = "桌面会话操作会打开宿主 App，暂不支持定位具体对话。";
 "Restart the client and review its hook permissions. New task events will appear automatically." = "请重启客户端并检查 Hook 权限，新的任务事件会自动出现在列表中。";
 "Open Agent" = "打开 Agent";
+"%@, %@, %@" = "%@，%@，%@";
+"Language" = "语言";
+"Unable to read the herdr navigation shortcuts. Check its prefix and pane-cycle keybindings." = "无法读取 herdr 导航快捷键，请检查前缀键和窗格轮换键的配置。";
+"Show herdr's sidebar with a unique workspace, tab and agent label, close any dialog, then try again." = "请显示 herdr 侧栏，确保工作区、标签页和 Agent 标识能唯一确定目标，关闭对话框后重试。";
 "Desktop hooks active" = "桌面 Hook 已连接";
 "Not Installed" = "未安装";
 "Up to Date" = "已是最新";

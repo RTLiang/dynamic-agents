@@ -11,6 +11,8 @@ public enum L10n {
         #endif
     }
 
+    public static var preferredLanguage: String { resourceBundle.preferredLocalizations.first ?? "en" }
+
     private static func bundle(for locale: Locale?) -> Bundle {
         guard let locale,
               let language = Bundle.preferredLocalizations(from: resourceBundle.localizations, forPreferences: [locale.identifier]).first,

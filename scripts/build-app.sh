@@ -75,10 +75,12 @@ stamp_version() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $app_build" "$1"
 }
 stamp_version "$destination/Contents/Info.plist"
+xcrun strip -S "$destination/Contents/MacOS/DynamicAgents"
 signing_identity="${APP_SIGNING_IDENTITY:--}"
 if [[ "$mode" == "native" ]]; then
   extension="$destination/Contents/PlugIns/DynamicAgentsWidgets.appex"
   stamp_version "$extension/Contents/Info.plist"
+  xcrun strip -S "$extension/Contents/MacOS/DynamicAgentsWidgets"
   codesign --force --sign "$signing_identity" --entitlements Resources/Widget.entitlements "$extension"
 fi
 codesign --force --sign "$signing_identity" --entitlements Resources/App.entitlements "$destination"

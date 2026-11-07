@@ -53,6 +53,15 @@ public struct AgentActivityFeed: Codable, Equatable, Sendable {
         return changed
     }
 
+    public func dashboardAgents(from agents: [Agent], at now: Date, completionLifetime: TimeInterval = Self.completionLifetime) -> [Agent] {
+        let current = Dictionary(self.agents(from: agents, at: now, completionLifetime: completionLifetime).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return agents.compactMap { agent in
+            guard !agent.isHookSession || agent.isSessionAvailable || current[agent.id]?.status == .done else { return nil }
+            if let recent = current[agent.id] { return recent }
+            return agent.status == .done ? agent.withStatus(.idle) : agent
+        }
+    }
+
     public func agents(from agents: [Agent], at now: Date, completionLifetime: TimeInterval = Self.completionLifetime) -> [Agent] {
         agents.compactMap { agent in
             if agent.status == .working { return agent }

@@ -10,12 +10,16 @@ struct FocusAgentIntent: AppIntent {
     static let isDiscoverable = false
 
     @Parameter(title: "Pane") var paneID: String
+    @Parameter(title: "Language") var languageIdentifier: String?
     init() { }
-    init(paneID: String) { self.paneID = paneID }
+    init(paneID: String, languageIdentifier: String? = nil) {
+        self.paneID = paneID
+        self.languageIdentifier = languageIdentifier
+    }
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        try await WidgetAgentHandoff.focus(paneID)
+        try await WidgetAgentHandoff.focus(paneID, locale: languageIdentifier.map { Locale(identifier: $0) })
         return .result()
     }
 }
@@ -24,13 +28,13 @@ struct FocusAgentIntent: AppIntent {
 private enum WidgetAgentHandoff {
     @MainActor private final class PendingReply { var error: String? }
 
-    static func focus(_ agentID: String) async throws {
+    static func focus(_ agentID: String, locale: Locale?) async throws {
         let request = AgentHandoffRequest(agentID: agentID)
-        guard let object = AgentHandoff.requestObject(request) else { throw unavailable() }
+        guard let object = AgentHandoff.requestObject(request) else { throw unavailable(locale) }
         let parent = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        guard Bundle(url: parent)?.bundleIdentifier == AgentHandoff.applicationID else { throw unavailable() }
+        guard Bundle(url: parent)?.bundleIdentifier == AgentHandoff.applicationID else { throw unavailable(locale) }
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: AgentHandoff.applicationID)
-        guard running.allSatisfy({ $0.bundleURL?.resolvingSymlinksInPath() == parent.resolvingSymlinksInPath() }) else { throw unavailable() }
+        guard running.allSatisfy({ $0.bundleURL?.resolvingSymlinksInPath() == parent.resolvingSymlinksInPath() }) else { throw unavailable(locale) }
 
         let pending = PendingReply()
         let center = DistributedNotificationCenter.default()
@@ -59,8 +63,8 @@ private enum WidgetAgentHandoff {
             }
             try await Task.sleep(for: .milliseconds(100))
         }
-        throw NSError(domain: AgentHandoff.applicationID, code: 2, userInfo: [NSLocalizedDescriptionKey: L10n.text("Dynamic Agents did not respond. Open the app and try again.")])
+        throw NSError(domain: AgentHandoff.applicationID, code: 2, userInfo: [NSLocalizedDescriptionKey: L10n.text("Dynamic Agents did not respond. Open the app and try again.", locale: locale)])
     }
 
-    private static func unavailable() -> NSError { NSError(domain: AgentHandoff.applicationID, code: 3, userInfo: [NSLocalizedDescriptionKey: L10n.text("Unable to open Dynamic Agents.")]) }
+    private static func unavailable(_ locale: Locale?) -> NSError { NSError(domain: AgentHandoff.applicationID, code: 3, userInfo: [NSLocalizedDescriptionKey: L10n.text("Unable to open Dynamic Agents.", locale: locale)]) }
 }

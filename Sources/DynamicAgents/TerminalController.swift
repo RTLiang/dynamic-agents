@@ -97,7 +97,7 @@ final class TerminalController {
         return try TerminalClientSelection.target(from: snapshot, surfaces: surfaces, paneID: paneID, preferredBundleID: preferredBundleID, preferredClientID: preference)
     }
 
-    func present(_ target: FocusTarget, paneID: String) async throws {
+    func present(_ target: FocusTarget, paneID: String, client: HerdrClient? = nil) async throws {
         if let app = NSRunningApplication(processIdentifier: target.client.application.pid) {
             NSApp.yieldActivation(to: app)
             app.unhide()
@@ -108,7 +108,7 @@ final class TerminalController {
                 if NSWorkspace.shared.frontmostApplication?.processIdentifier == target.client.application.pid { break }
                 try await Task.sleep(for: .milliseconds(50))
             }
-            try await HerdrClientNavigation.open(paneID: paneID, target: target)
+            try await HerdrClientNavigation.open(paneID: paneID, target: target, client: client)
         }
     }
 

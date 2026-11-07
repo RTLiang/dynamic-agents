@@ -15,38 +15,10 @@ enum HerdrClientNavigation {
         "f1":122,"f2":120,"f3":99,"f4":118,"f5":96,"f6":97,"f7":98,"f8":100,"f9":101,"f10":109,"f11":103,"f12":111
     ]
 
-    static func open(paneID: String, target: TerminalFocusTarget) async throws {
-        let keys = try HerdrNavigationKeys.load(path: target.client.configPath)
-        guard target.client.attachedPaneID == nil,
-              paneID.range(of: "^[A-Za-z0-9_-]+:p[0-9]+$", options: .regularExpression) != nil,
-              keys.openNavigator.allSatisfy({ keyCodes[$0.key] != nil }) else {
-            throw failure("Unable to read the herdr navigation shortcuts. Check its prefix and goto keybindings.")
-        }
-        try validate(target)
-        guard AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary) else {
-            throw failure("Allow Dynamic Agents in System Settings > Privacy & Security > Accessibility to select existing herdr pages.")
-        }
-        do {
-            if HerdrNavigatorSnapshot(screen: try await availableScreen(target)) != nil { try await closeNavigator(target) }
-            try await openNavigator(keys, target: target)
-            let current = try await navigator(target)
-            if current.selectedPaneID == paneID { try await closeNavigator(target); return }
-            try tap(try HerdrNavigationKey("/"), target: target)
-            _ = try await navigator(target, matching: { $0.searchFocused })
-            try validate(target)
-            if try !TerminalAutomation.inputText(paneID, to: target.surface, application: target.client.application) {
-                for character in paneID { try type(character, target: target) }
-            }
-            _ = try await navigator(target, matching: { $0.searchFocused && $0.terminalCount == 1 && $0.selectedPaneID == paneID })
-            try tap(try HerdrNavigationKey("enter"), target: target)
-            try await waitUntil(target) { HerdrNavigatorSnapshot(screen: $0) == nil }
-            try await openNavigator(keys, target: target)
-            _ = try await navigator(target, matching: { !$0.searchFocused && $0.selectedPaneID == paneID })
-            try await closeNavigator(target)
-        } catch {
-            try? await closeNavigator(target)
-            throw error
-        }
+    static func supports(_ keys: [HerdrNavigationKey]) -> Bool { keys.allSatisfy { keyCodes[$0.key] != nil } }
+
+    static func open(paneID: String, target: TerminalFocusTarget, client: HerdrClient? = nil) async throws {
+        try await HerdrDirectNavigation.open(paneID: paneID, target: target, client: client)
     }
 
     static func currentPane(target: TerminalFocusTarget) async throws -> String? {
@@ -69,7 +41,7 @@ enum HerdrClientNavigation {
         }
     }
 
-    private static func validate(_ target: TerminalFocusTarget) throws {
+    static func validate(_ target: TerminalFocusTarget) throws {
         if let session = CGSessionCopyCurrentDictionary() as? [String: Any], session["CGSSessionScreenIsLocked"] as? Bool == true {
             throw failure("Unlock your Mac before selecting an existing herdr page.")
         }
@@ -97,7 +69,7 @@ enum HerdrClientNavigation {
         return string.substring(with: NSRange(location: range.location, length: range.length))
     }
 
-    private static func textArea(_ target: TerminalFocusTarget) throws -> AXUIElement {
+    static func textArea(_ target: TerminalFocusTarget) throws -> AXUIElement {
         let system = AXUIElementCreateSystemWide()
         var value: CFTypeRef?
         if AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &value) == .success,
@@ -149,7 +121,7 @@ enum HerdrClientNavigation {
         return value
     }
 
-    private static func tap(_ key: HerdrNavigationKey, target: TerminalFocusTarget) throws {
+    static func tap(_ key: HerdrNavigationKey, target: TerminalFocusTarget) throws {
         try validate(target)
         if try TerminalAutomation.sendKey(key, to: target.surface, application: target.client.application) { return }
         guard let code = keyCodes[key.key] else { throw unreadable() }
@@ -199,7 +171,7 @@ enum HerdrClientNavigation {
         return result
     }
 
-    private static func availableScreen(_ target: TerminalFocusTarget) async throws -> String {
+    static func availableScreen(_ target: TerminalFocusTarget) async throws -> String {
         var text = ""
         try await waitUntil(target) { text = $0; return true }
         return text

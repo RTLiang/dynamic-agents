@@ -1,78 +1,85 @@
 # Dynamic Agents
 
-macOS SwiftUI 应用，通过 [herdr](https://herdr.dev/) 查看 coding agent 状态，并在系统实时活动中快速切回终端。
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-## 功能
+Keep an eye on your coding agents without watching every terminal.
 
-- 显示 herdr 检测到的 Pi、Claude Code、Codex 等 agent，也支持自定义 agent 类型。
-- 在连接设置中管理 herdr 的 Agent 集成：查看可用性和安装状态，安装、更新或移除 Hook/插件，并区分生命周期上报与 herdr 状态检测。
-- 独立的桌面 Hook 通道接收 Claude Code Desktop、Codex App、Cursor 和 VS Code Copilot 本机编程会话事件，支持 herdr 之外的会话。按需安装，不自动改写客户端配置。
-- Codex 会话有可用标题时优先显示标题，并同步改名；没有标题时回退为 agent 类型与会话短码。
-- 主窗口提供搜索、状态筛选、排序和终端定位；按 herdr session、客户端 PID 和 TTY 区分同一终端 App 的多个窗口，无需手动填写 Bundle ID。通过选定客户端内的导航器选择已有 agent 页面，重复点击复用同一页面。
-- 使用 ActivityKit 和 WidgetKit 展示系统实时活动。收起时显示运行和完成数量，展开时逐条显示会话；点击会话由 Widget 内的后台 App Intent 直接转交主 App，定位已有终端或桌面宿主；不唤起额外辅助 App。
-- 实时活动只包含运行中的 agent 和最近完成的 agent。完成后保留时间可在设置中调整为 **1–1440 分钟**，默认 10 分钟；没有符合条件的 agent 时自动隐藏。
-- 菜单栏图标可单独隐藏，App 和实时活动继续运行。可从 Dock 重新打开主窗口，并在设置中恢复图标。
-- 支持 English 和简体中文，跟随系统或 macOS 的单应用语言设置。
-- App 菜单与设置提供检查更新，可自动每日检查 GitHub 稳定 Release；标签触发的 CI 构建原生 ZIP 和 SHA-256，不执行公证。
+Dynamic Agents is a native Mac app that shows which coding conversations are running, waiting for you, or ready to review. A system Live Activity lets you return to a session from the menu bar area.
 
-## 要求
+**[Download the latest release](https://github.com/RTLiang/dynamic-agents/releases/latest)**
 
-- 本机运行的 herdr；当前协议适配经 herdr 0.9.5 验证。
-- 实时活动版本需要 macOS 27.3+ 和对应 SDK 的 Xcode。
-- 桌面 Hook 需要本机可用的 Python 3；客户端版本、Hook 信任设置或组织策略会影响是否上报。
-- SwiftPM Companion 版本需要 macOS 15+，但不包含实时活动。
-- 精确终端定位支持 Ghostty 1.3+、iTerm2 和 Apple Terminal，需要允许 App 的自动化请求。
+## Requirements
 
-系统决定实时活动的展示位置与可用空间。未配置或未能检测的 agent 取决于 herdr 的支持和集成配置；详见 [herdr 文档](https://herdr.dev/docs/agents/)。
+- An Apple silicon Mac running **macOS 27.3 or later** for the app with Live Activities.
+- [herdr](https://herdr.dev/) for sessions running inside herdr.
+- Python 3 and a supported client's lifecycle hooks for desktop sessions outside herdr. You can use this mode without running herdr.
 
-## 安装与构建
+Desktop adapters support Claude Code, Codex App / CLI, Cursor Agent, and VS Code's shared Copilot runtime. Client versions, organization policies, and hook trust settings determine whether events are delivered. Ordinary chat windows are not monitored.
 
-```bash
-# 原生版本：构建、安装、注册 Widget 并打开
-bash scripts/install-app.sh
+## Install
 
-# 仅构建原生 App 和 Widget
-bash scripts/build-app.sh native
+1. Download the ZIP from the [Releases page](https://github.com/RTLiang/dynamic-agents/releases/latest), unzip it, and move **DynamicAgents.app** to **Applications**.
+2. Open the app. If macOS blocks it, open **System Settings → Privacy & Security**, find the message about Dynamic Agents, and choose **Open Anyway**, then confirm. Use the release's SHA-256 file if you want to check the download.
+3. When you use terminal navigation, enable **Dynamic Agents** in **Privacy & Security → Accessibility** and allow its Automation request for your terminal.
 
-# 构建不含 Widget 的 Companion
-bash scripts/build-app.sh companion
-```
+Releases are built locally. They do not use an Apple Developer ID certificate or notarization. Apple silicon binaries retain the local ad-hoc signature required to run; this is not Apple verification. First-launch approval, Accessibility, and Automation are separate macOS controls.
 
-安装脚本默认使用用户 Applications 目录；如果仅在系统 Applications 目录中已有本 App，则更新该安装。更新时旧安装移入废纸篓，脚本需要 `trash` 命令。它自动寻找满足要求的 SDK，不修改全局 Xcode 选择；显式指定 `DEVELOPER_DIR` 时使用指定工具链。
+## Start monitoring
 
-构建产物位于 `dist/`。应用使用 ad-hoc 签名，不执行公证。推送稳定版本标签可通过 GitHub Actions 发布原生包；构建 runner 必须提供 27.3 SDK。工作流、runner 配置及更新源见 [Release 与检查更新](docs/RELEASES.md)。Xcode 项目由 `scripts/generate-project.py` 生成，若需开发者签名请在生成后自行配置团队。
+**Sessions inside herdr**
 
-## 使用
+Start herdr, run your coding agent inside it, then open Dynamic Agents. The app discovers local herdr clients automatically. Use the gear button to choose a session or a specific terminal window when you have more than one.
 
-1. 在终端启动 herdr，并在其中启动 agent。
-2. 打开 Dynamic Agents。默认自动发现 herdr 可执行文件；也可在连接设置中指定路径和会话。
-3. 主窗口单击选择 agent，双击或按 Return 定位对应 session 中的已有页面；桌面 Hook 会话定位其终端或激活桌面宿主。多个 herdr 客户端时，在设置中选择具体“herdr 窗口”。Ghostty、iTerm2 和 Apple Terminal 都复用已有终端；请允许 App 的“自动化”及“辅助功能”请求。
-4. 在工具栏控制实时活动。连接设置中的“完成后保留”可设置分钟数，保存后立即生效。
-5. 在连接设置 → Agent 集成 → 管理集成中，按需安装或更新对应 agent 的集成，完成后重启那个 agent。安装/移除立即生效，不受设置页保存或取消影响。
-6. 菜单栏菜单可隐藏菜单栏图标；在连接设置中可以恢复。关闭主窗口不会退出 App。
+**Desktop clients and sessions outside herdr**
 
-herdr 的集成只服务于 herdr 中的会话。桌面客户端可使用管理页中的“桌面客户端”标签安装独立 Hook，重启客户端并完成信任审核后接收本机任务事件；不监控普通聊天窗口或仅凭进程判断忙碌。详见 [桌面 Hook](docs/DESKTOP-HOOKS.md) 和 [herdr 调研](docs/HERDR-AGENT-MONITORING.md)。
+Open **Connection Settings → Agent Integrations → Manage Integrations → Desktop Clients**. Install the adapter you need, restart that client, and review its hook permissions. Codex requires trusting the hooks in its own hook settings. Existing client hooks are preserved.
 
-完成时刻依据 herdr 的 `completion_seq` 或状态变化在持续轮询时记录。首次连接或长时间中断后，无法确定时间的旧完成记录不会当成新完成任务。调整时长不会改变原始 herdr 状态。[详细说明](docs/NATIVE-UI-AND-AGENTS.md)。
+## Understand the list
 
-## 测试
+The default order is **Running → Needs Input → Completed → Idle**, followed by Unknown when a connection cannot be verified. You can search, filter by status, or sort the table yourself.
 
-```bash
-python3 scripts/check-localizations.py
-python3 scripts/test-desktop-hooks.py
-swift test --build-system native
-# 可选：对当前 herdr 执行只读集成测试
-HERDR_LIVE_TEST=1 swift test --build-system native
-```
+| Status | What it means |
+| --- | --- |
+| **Running** | The agent is actively working on a turn. |
+| **Needs Input** | Work is paused for a permission, answer, or decision from you. |
+| **Completed** | A turn ended recently and its result is ready to review. This does not mean an entire project is finished or that every requested outcome succeeded. |
+| **Idle** | The coding session is still available, with no work running and no current completion reminder. A new or interrupted session can also be idle. |
+| **Unknown** | The app cannot currently verify the session's state. It is not counted as running. |
 
-核心测试覆盖快照解析、agent 类型、集成管理 API、Unix Socket 通信、可配置完成时长、载荷限制、超时、终端窗口与 session 隔离、稳定版本更新解析和本地化。原生实时活动和后台跳转的实机验证方式见 [验证说明](docs/NATIVE-VERIFICATION.md) 与 [后台终端跳转](docs/BACKGROUND-HANDOFF.md)。完整系统 Widget 的鼠标点击和具体展示方式仍需在目标系统上手动确认。
+A completion reminder lasts **10 minutes by default**. Change **Show Completed For** in Connection Settings from **1 to 1440 minutes**. Viewing a result does not restart its timer. When the reminder expires, an available session becomes Idle; a closed desktop session disappears.
 
-## 结构
+The app lists coding sessions and recent completions. Empty shell tabs, closed idle desktop sessions, ordinary chat, and internal work such as Codex memory consolidation or title generation do not belong in the list.
 
-- `Sources/AgentCore/`：herdr 协议、终端发现、状态、活动载荷和本地化资源。
-- `Sources/DynamicAgents/`：SwiftUI 主程序、活动生命周期和后台动作。
-- `WidgetExtension/`：WidgetKit 实时活动视图及 Widget 内的后台点击转交。
-- `Tests/AgentCoreTests/`：核心模型及集成测试。
-- `scripts/`：构建、安装、项目生成与检查。
+## Return to your work
 
-更多信息：[终端检测](docs/TERMINAL-DETECTION.md) · [多 Agent 与显示规则](docs/NATIVE-UI-AND-AGENTS.md) · [本地化](docs/LOCALIZATION.md) · [API 参考](docs/API-REFERENCES.md)。
+Double-click a row, select it and press **Return**, or choose a session from the menu bar or Live Activity.
+
+For herdr, Dynamic Agents selects the existing page in your chosen terminal client. It keeps other clients on their current pages and does not create another window or tab. Supported terminals are **Ghostty 1.3+**, **iTerm2**, and **Apple Terminal**. Keep herdr's normal sidebar visible and mouse capture enabled for direct navigation; unsupported or ambiguous layouts produce an explanation rather than choosing another client.
+
+For general desktop clients, the app opens the observed host app. It cannot select an exact conversation inside every editor.
+
+## Live Activities and language
+
+Live Activities show **running sessions and recent completions**. Idle sessions and sessions waiting for input stay in the dashboard and menu. When no eligible session remains, the activity hides while monitoring continues.
+
+The app and Live Activity support **English and Simplified Chinese**. They follow your Mac's language or the language selected for Dynamic Agents in **System Settings → General → Language & Region → Applications**. Compact counts, expanded statuses, action hints, and accessibility text use that language. Your session titles and project names stay as you named them.
+
+You can hide the menu bar icon in settings without stopping monitoring. Closing the dashboard also keeps monitoring running. Reopen the app from the Dock to restore its window or icon.
+
+## If something does not appear or open
+
+- **No sessions:** check that herdr is running, or that the desktop adapter is installed and trusted. Start a new coding turn so the client sends an event.
+- **Wrong herdr window:** select the exact **Open With** app and **herdr Window** in Connection Settings. A closed selected window must be selected again; the app will not redirect you elsewhere.
+- **Navigation stopped after an update:** open Accessibility settings. If the existing Dynamic Agents entry is enabled but no longer works, remove that entry and add the current app from Applications again. Complete password or Touch ID prompts yourself.
+- **Hook says Update Available:** use the current app release to update the adapter. Keep the app and copied helper from the same version; an older app cannot tell that a separately replaced script is newer.
+- **Live Activity missing:** enable it in the app, allow it if macOS asks, and check that a session is running or recently completed.
+
+## Privacy and updates
+
+Session status stays on your Mac. Desktop hooks store lifecycle metadata, a hashed session identifier, a project basename, and process ancestry. They do not save prompts, tool arguments, or transcripts. Codex source classification reads only a bounded session-metadata header.
+
+The optional update check contacts this repository's public GitHub Releases API. It opens the release page; it does not install updates automatically or upload your session content. You can disable automatic checks in settings.
+
+## Build or contribute
+
+For local builds, release packaging, and verification, see [the release guide](docs/RELEASES.md), [desktop hook details](docs/DESKTOP-HOOKS.md), and [the verification skill](.cursor/skills/verify-dynamic-agents/SKILL.md). CI checks the code; release packages are compiled and uploaded from a local Mac.

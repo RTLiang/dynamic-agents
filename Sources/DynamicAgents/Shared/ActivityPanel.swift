@@ -20,19 +20,19 @@ struct AgentActivityContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if stale || !state.connected {
-                Text(state.connected ? L10n.text("Status out of date") : L10n.text("Connection lost"))
+                Text(state.connected ? L10n.text("Status out of date", locale: state.locale) : L10n.text("Connection lost", locale: state.locale))
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(.bottom, 4)
             }
             ForEach(state.items) { agent in
-                Button(intent: FocusAgentIntent(paneID: agent.id)) {
+                Button(intent: FocusAgentIntent(paneID: agent.id, languageIdentifier: state.languageIdentifier)) {
                     HStack(spacing: 12) {
                         Text(agent.title)
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(.primary)
                             .lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 0)
-                        Text(agent.status.label)
+                        Text(agent.status.label(locale: state.locale))
                             .font(.system(size: 14))
                             .foregroundStyle(.secondary)
                             .fixedSize()
@@ -43,11 +43,11 @@ struct AgentActivityContentView: View {
                 .buttonStyle(.plain)
                 .disabled(stale || !state.connected)
                 .accessibilityIdentifier("focus-agent-\(agent.id)")
-                .accessibilityLabel("\(agent.kindName)，\(agent.title)，\(agent.status.label)")
-                .accessibilityHint(L10n.text("Open Agent"))
+                .accessibilityLabel(L10n.format("%@, %@, %@", agent.kindName, agent.title, agent.status.label(locale: state.locale), locale: state.locale))
+                .accessibilityHint(L10n.text("Open Agent", locale: state.locale))
             }
             if state.total > state.items.count {
-                Link(L10n.format("session.more", Int64(state.total - state.items.count)), destination: AgentHandoff.dashboardURL)
+                Link(L10n.format("session.more", Int64(state.total - state.items.count), locale: state.locale), destination: AgentHandoff.dashboardURL)
                     .buttonStyle(.plain)
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(.top, 4)

@@ -17,14 +17,17 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
     public var total: Int
     public var connected: Bool
     public var items: [Item]
+    public var languageIdentifier: String?
+    public var locale: Locale { Locale(identifier: languageIdentifier ?? L10n.preferredLanguage) }
     public var headline: String {
         if !connected { return L10n.text("herdr connection lost") }
+        if working > 0 { return L10n.format("agent.running", Int64(working)) }
         if blocked > 0 { return L10n.format("agent.waiting", Int64(blocked)) }
         if done > 0 { return L10n.format("agent.completed", Int64(done)) }
-        if working > 0 { return L10n.format("agent.running", Int64(working)) }
         return total > 0 ? L10n.text("All agents are ready") : L10n.text("Waiting for agents")
     }
     public func compactLabels(locale: Locale? = nil, accessibility: Bool = false) -> [String] {
+        let locale = locale ?? self.locale
         guard connected else { return [L10n.text("Offline", locale: locale)] }
         return [(working, accessibility ? "%@ running" : "%@ Run"), (done, accessibility ? "%@ completed" : "%@ Done")].compactMap { count, key in
             guard count > 0 else { return nil }
@@ -33,19 +36,21 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
     }
 
     public var prominentCount: Int {
+        if working > 0 { return working }
         if blocked > 0 { return blocked }
         if done > 0 { return done }
-        if working > 0 { return working }
         return total
     }
     public var status: AgentStatus {
         if !connected { return .unknown }
+        if working > 0 { return .working }
         if blocked > 0 { return .blocked }
         if done > 0 { return .done }
-        if working > 0 { return .working }
         return .idle
     }
-    public init(agents: [Agent], workspaces: [Workspace], connected: Bool = true, prioritizeRunning: Bool = false, itemLimit: Int = 3) {
+    public init(agents: [Agent], workspaces: [Workspace], connected: Bool = true, prioritizeRunning: Bool = false, itemLimit: Int = 3,
+                languageIdentifier: String? = L10n.preferredLanguage) {
+        self.languageIdentifier = languageIdentifier
         self.connected = connected
         working = agents.filter { $0.status == .working }.count
         blocked = agents.filter { $0.status == .blocked }.count

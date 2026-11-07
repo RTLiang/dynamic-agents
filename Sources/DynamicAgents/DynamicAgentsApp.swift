@@ -58,7 +58,7 @@ struct AgentMenu: View {
     var body: some View {
         Text(store.loading ? L10n.text("Connecting…") : store.state.headline)
         Divider()
-        ForEach([AgentStatus.blocked, .done, .working, .idle, .unknown], id: \.self) { status in
+        ForEach(AgentStatus.allCases.sorted { $0.priority < $1.priority }, id: \.self) { status in
             let agents = store.agents.filter { $0.status == status }
             if !agents.isEmpty {
                 Section(status.label) {

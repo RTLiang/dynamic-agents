@@ -226,6 +226,16 @@ if action == "doctor" {
             }
             if hasUser {
                 require(find(root) { attribute($0, kAXValueAttribute) as? String == "Completed" } != nil, "normal memory-project completion missing")
+                guard let table = find(root, matching: { attribute($0, kAXIdentifierAttribute) as? String == "agents-table" }) else { require(false, "agents table missing"); return }
+                func titles(_ node: AXUIElement) -> [String] {
+                    let value = attribute(node, kAXValueAttribute) as? String
+                    let own = value.map { ["Build example", "Memory project example", "Review example"].contains($0) ? [$0] : [] } ?? []
+                    return own + (attribute(node, kAXChildrenAttribute) as? [AXUIElement] ?? []).flatMap(titles)
+                }
+                var seen = Set<String>()
+                let ordered = titles(table).filter { seen.insert($0).inserted }
+                require(ordered == ["Build example", "Memory project example", "Review example"], "default order is not Running, Completed, Idle")
+                print("result: default row order is Running, Completed, Idle")
             }
             print("result: dashboard has \(count) agents; background memory absent; user completion \(hasUser ? "visible" : "removed")")
         }

@@ -40,10 +40,12 @@ final class AgentStore {
         }
     }
     var state: AgentActivityState { AgentActivityState(agents: agents, workspaces: workspaces, connected: connected) }
-    var activityState: AgentActivityState {
+    private var completionLifetime: TimeInterval {
         let storedMinutes = UserDefaults.standard.object(forKey: "completionWindowMinutes") as? Int ?? 10
-        let minutes = min(max(storedMinutes, 1), 1440)
-        return AgentActivityState(agents: activityFeed.agents(from: agents, at: .now, completionLifetime: TimeInterval(minutes * 60)), workspaces: workspaces, connected: connected, prioritizeRunning: true, itemLimit: .max)
+        return TimeInterval(min(max(storedMinutes, 1), 1440) * 60)
+    }
+    var activityState: AgentActivityState {
+        AgentActivityState(agents: activityFeed.agents(from: agents, at: .now, completionLifetime: completionLifetime), workspaces: workspaces, connected: connected, prioritizeRunning: true, itemLimit: .max)
     }
     var client: HerdrClient { HerdrClient(executable: executable, session: session) }
     func workspaceName(_ id: String) -> String { workspaces.first { $0.id == id }?.label ?? id }
@@ -98,13 +100,15 @@ final class AgentStore {
             let hosts = applications.filter { launchDates[$0.pid].map { $0.timeIntervalSince1970 <= event.timestamp } ?? false }
             return event.agent(applications: hosts, now: .now, processes: hookSnapshot.processes)
         }
-        agents = (herdrConnected ? herdrAgents : herdrAgents.map { $0.withStatus(.unknown) }) + desktopAgents
-        let desktopWorkspaces = Dictionary(desktopAgents.map { ($0.workspaceID, $0.projectName ?? $0.kindName) }, uniquingKeysWith: { first, _ in first })
-        workspaces = herdrWorkspaces + desktopWorkspaces.map { Workspace(id: $0.key, label: $0.value) }
-        connected = herdrConnected || !desktopAgents.isEmpty
-        if activityFeed.observe(agents, at: .now), let data = try? JSONEncoder().encode(activityFeed) {
+        let observed = (herdrConnected ? herdrAgents : herdrAgents.map { $0.withStatus(.unknown) }) + desktopAgents
+        let now = Date.now
+        if activityFeed.observe(observed, at: now), let data = try? JSONEncoder().encode(activityFeed) {
             UserDefaults.standard.set(data, forKey: "activityFeed")
         }
+        agents = activityFeed.dashboardAgents(from: observed, at: now, completionLifetime: completionLifetime)
+        let desktopWorkspaces = Dictionary(agents.filter(\.isHookSession).map { ($0.workspaceID, $0.projectName ?? $0.kindName) }, uniquingKeysWith: { first, _ in first })
+        workspaces = herdrWorkspaces + desktopWorkspaces.map { Workspace(id: $0.key, label: $0.value) }
+        connected = herdrConnected || agents.contains(where: \.isHookSession)
         await liveActivity.update(activityState, session: session)
     }
     func refreshTerminals() async {
@@ -183,7 +187,7 @@ final class AgentStore {
         do {
             let target = try terminal.prepareFocus(paneID: agent.paneID, preferredBundleID: preferredTerminal)
             guard requestClient.executable == executable, requestClient.session == session else { return }
-            try await terminal.present(target, paneID: agent.paneID)
+            try await terminal.present(target, paneID: agent.paneID, client: requestClient)
         } catch { actionError = error.localizedDescription }
         await refresh()
     }

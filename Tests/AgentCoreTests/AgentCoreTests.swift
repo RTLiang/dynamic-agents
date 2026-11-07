@@ -8,7 +8,7 @@ private func response(_ agents: String) -> Data {
     """.utf8)
 }
 
-@Test func decodesHerdrEnvelopeAndSortsAttentionFirst() throws {
+@Test func decodesHerdrEnvelopeAndSortsRunningFirst() throws {
     let snapshot = try Snapshot.decode(response("""
     [
       {"pane_id":"w1:p1","workspace_id":"w1","agent":"pi","agent_status":"working","terminal_title_stripped":"Build","cwd":"/tmp/demo"},
@@ -17,10 +17,10 @@ private func response(_ agents: String) -> Data {
       {"pane_id":"w1:p4","workspace_id":"w1","agent":"claude","agent_status":"done"}
     ]
     """))
-    #expect(snapshot.trackedAgents.map(\.id) == ["w1:p2", "w1:p4", "w1:p1"])
+    #expect(snapshot.trackedAgents.map(\.id) == ["w1:p1", "w1:p2", "w1:p4"])
     let state = AgentActivityState(agents: snapshot.trackedAgents, workspaces: snapshot.workspaces)
     #expect(state.blocked == 1 && state.working == 1 && state.done == 1 && state.total == 3)
-    #expect(state.status == .blocked)
+    #expect(state.status == .working)
     #expect(state.items.first?.project == "Demo")
 }
 

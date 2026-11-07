@@ -41,9 +41,9 @@ private func snapshot(_ agents: [[String: Any]]) throws -> Snapshot {
         ["pane_id": "w1:claude", "workspace_id": "w1", "agent": "claude", "agent_status": "working"]
     ])
     let activity = AgentActivityState(agents: result.trackedAgents, workspaces: result.workspaces)
-    #expect(activity.items.map(\.id) == ["w1:codex", "w1:claude", "w1:pi"])
-    #expect(activity.items.map(\.kindName) == ["Codex", "Claude Code", "Pi"])
-    #expect(activity.items.map(\.status) == [.blocked, .working, .idle])
+    #expect(activity.items.map(\.id) == ["w1:claude", "w1:codex", "w1:pi"])
+    #expect(activity.items.map(\.kindName) == ["Claude Code", "Codex", "Pi"])
+    #expect(activity.items.map(\.status) == [.working, .blocked, .idle])
     #expect(activity.blocked == 1 && activity.working == 1 && activity.done == 0)
 }
 
@@ -55,14 +55,14 @@ private func snapshot(_ agents: [[String: Any]]) throws -> Snapshot {
         ["pane_id": "w1:p2", "workspace_id": "w1", "agent": "codex", "agent_status": "working",
          "title": "Build service", "terminal_title_stripped": "Shell"]
     ])
-    let reviewer = try #require(result.trackedAgents.first)
+    let reviewer = try #require(result.trackedAgents.first { $0.id == "w1:p1" })
     #expect(reviewer.id == "w1:p1" && reviewer.kind == "claude")
     #expect(reviewer.title == "Reviewer" && reviewer.kindName == "Code Review")
     #expect(reviewer.status == .blocked)
-    #expect(result.trackedAgents.last?.title == "Build service")
+    #expect(result.trackedAgents.first?.title == "Build service")
     let activity = AgentActivityState(agents: result.trackedAgents, workspaces: result.workspaces)
-    #expect(activity.items.first?.kind == "claude")
-    #expect(activity.items.first?.kindName == "Code Review")
+    #expect(activity.items.last?.kind == "claude")
+    #expect(activity.items.last?.kindName == "Code Review")
 }
 
 @Test func oldActivityPayloadWithoutDisplayOverrideStillDecodes() throws {

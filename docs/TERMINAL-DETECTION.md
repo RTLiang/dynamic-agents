@@ -8,13 +8,13 @@
 
 ## 复用已有页面
 
-Ghostty 1.3+、iTerm2 和 Apple Terminal 使用同一策略：先按 TTY 唯一匹配已有终端 surface，再在该客户端内打开 herdr 的 Go to 导航器。App 从客户端使用的配置读取 `keys.prefix` 和 `keys.goto`，通过辅助功能读取当前可见导航器，按 pane ID 筛选。只有唯一结果的详细信息也对应目标 ID 时才选择；随后重新打开导航器回读当前选择并关闭导航器。
+Ghostty 1.3+、iTerm2 和 Apple Terminal 使用同一策略：按 TTY 唯一匹配已有终端 surface，读取目标客户端当前可见的 herdr 常规侧栏，结合服务端工作区、标签页和 Agent 元数据，唯一匹配目标条目并直接点击。正常跳转不打开 Go to 选择页，不按名称猜选另一个客户端。开始时通过该客户端自己的 pane-cycle 快捷键建立焦点上下文；App 读取客户端配置中的 `keys.prefix` 和 `keys.cycle_pane_next`，不会改写配置。
 
-已经位于目标页面时直接确认已有页面。跳转及重复点击均不创建终端窗口、标签或 agent 直连进程。已直连另一个 agent 的页面不能作为普通 herdr 导航器使用，会返回错误并要求选择 herdr 窗口。
+跳转及重复点击均不创建终端窗口、标签或 agent 直连进程。已直连另一个 agent 的页面不能作为普通 herdr 客户端使用，会返回错误并要求选择 herdr 窗口。常规侧栏须可用，并保持 herdr 的鼠标捕获开启；滚动可见列表后仍无法唯一确认条目、同一标签页内存在完全相同的 Agent 标识或使用无法识别的自定义布局时，返回说明，不退回选择页面。
 
-herdr 0.9.5 公共 socket 的 `agent.focus` / `pane.focus` 会调用 `focus_all_shell_clients_on_default_target`，改变该 session 下所有 shell 客户端的位置。App 使用客户端自己的导航器，让 herdr 通过该客户端的 endpoint 请求选择页面。App 不调用会话范围的公共 focus，也不向 agent 输入请求文本。
+herdr 0.9.5 公共 socket 的 `agent.focus` / `pane.focus` 会调用 `focus_all_shell_clients_on_default_target`，改变该 session 下所有 shell 客户端的位置。App 使用限定到已选 native surface 的本地输入，让 herdr 通过该客户端自己的 endpoint 选择页面。App 不调用会话范围的公共 focus，也不向 agent 输入请求文本。
 
-终端需要允许 Dynamic Agents 的“自动化”请求；在普通 herdr 客户端内选择页面还需要 App 的“辅助功能”授权。App 只读取目标终端的可见文本，并在锁屏、PID／启动时间变化、目标 surface 或前台 App 改变、导航器无法识别、结果不唯一时停止。支持字符串及双引号单行数组的导航快捷键配置；无法解析的自定义格式会返回错误。
+终端需要允许 Dynamic Agents 的“自动化”请求；在普通 herdr 客户端内选择页面还需要 App 的“辅助功能”授权。App 只读取目标终端的可见文本和终端网格尺寸，并在锁屏、PID／启动时间变化、目标 surface 或前台 App 改变、侧栏无法识别、结果不唯一时停止。点击前进行新鲜的 native 命中检查；只接受属于所选终端 App 的目标。支持字符串及双引号单行数组的快捷键配置；无法解析的自定义格式会返回错误。
 
 AppleScript 的字段分隔符在进入终端应用上下文前显式设为字符 9。`tab` 在终端脚本字典内可能表示“标签页”类型，不能用来拼接窗口列表的制表符。
 
@@ -24,7 +24,7 @@ AppleScript 的字段分隔符在进入终端应用上下文前显式设为字�
 
 ## 验证
 
-核心测试覆盖同 App 多客户端、命名 session、继承端点及配置、TTY 唯一匹配、已有页面选择策略、导航快捷键和导航器回读。原生验证还记录 `exactWindowVerified` 与 `terminalViewsUnchanged`。全局 `focused_pane_id` 不变只是隔离证据。
+核心测试覆盖同 App 多客户端、命名 session、继承端点及配置、TTY 唯一匹配、已有页面选择策略、侧栏匹配、截断与重复标签。原生验证还记录 `exactWindowVerified` 与 `terminalViewsUnchanged`。全局 `focused_pane_id` 不变只是隔离证据。诊断用的 `currentPane` 仍可打开 Go to 来独立读取客户端页面；应在计时和观察正常动作之外执行，不能把诊断选择页当作产品跳转路径。
 
 实机分别验证 Ghostty、iTerm2 和 Apple Terminal：建立一次性 session 和两个客户端，记录每个客户端的当前页面及 surface。选择目标客户端内另一页面，再重复点击；要求目标页面正确、终端 surface 集合不变、其他客户端页面不变。分别覆盖主窗口、菜单和系统活动行。系统活动还需检查主 App 激活次数；直接调用动作不能代替系统控件测试。
 

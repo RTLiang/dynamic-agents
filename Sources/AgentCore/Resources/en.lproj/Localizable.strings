@@ -8,6 +8,10 @@
 "Desktop actions open the host app; selecting an exact conversation is not supported." = "Desktop actions open the host app; selecting an exact conversation is not supported.";
 "Restart the client and review its hook permissions. New task events will appear automatically." = "Restart the client and review its hook permissions. New task events will appear automatically.";
 "Open Agent" = "Open Agent";
+"%@, %@, %@" = "%@, %@, %@";
+"Language" = "Language";
+"Unable to read the herdr navigation shortcuts. Check its prefix and pane-cycle keybindings." = "Unable to read the herdr navigation shortcuts. Check its prefix and pane-cycle keybindings.";
+"Show herdr's sidebar with a unique workspace, tab and agent label, close any dialog, then try again." = "Show herdr's sidebar with a unique workspace, tab and agent label, close any dialog, then try again.";
 "Desktop hooks active" = "Desktop hooks active";
 "Not Installed" = "Not Installed";
 "Up to Date" = "Up to Date";

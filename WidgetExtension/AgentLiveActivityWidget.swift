@@ -19,12 +19,12 @@ struct AgentLiveActivityWidget: Widget {
                         .padding(.vertical, 4)
                 }
             } compactLeading: {
-                Text(context.isStale ? L10n.text("Stale") : context.state.compactLabels().first ?? "—")
+                Text(context.isStale ? L10n.text("Stale", locale: context.state.locale) : context.state.compactLabels().first ?? "—")
                     .font(.system(size: 14, weight: .medium).monospacedDigit())
                     .lineLimit(1).minimumScaleFactor(0.8)
                     .padding(.leading, 5)
                     .padding(.trailing, context.isStale || context.state.compactLabels().count < 2 ? 7 : 0)
-                    .accessibilityLabel(context.isStale ? L10n.text("Status out of date") : context.state.compactLabels(accessibility: true).joined(separator: ", "))
+                    .accessibilityLabel(context.isStale ? L10n.text("Status out of date", locale: context.state.locale) : context.state.compactLabels(accessibility: true).joined(separator: ", "))
             } compactTrailing: {
                 if !context.isStale, context.state.connected, context.state.compactLabels().count > 1 {
                     Text(context.state.compactLabels()[1])
@@ -42,7 +42,7 @@ struct AgentLiveActivityWidget: Widget {
                     Text(count(context)).font(.system(size: 15, weight: .medium).monospacedDigit())
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(context.isStale ? L10n.text("Status out of date") : context.state.compactLabels(accessibility: true).joined(separator: ", "))
+                .accessibilityLabel(context.isStale ? L10n.text("Status out of date", locale: context.state.locale) : context.state.compactLabels(accessibility: true).joined(separator: ", "))
             }
             .widgetURL(AgentHandoff.dashboardURL)
         }
