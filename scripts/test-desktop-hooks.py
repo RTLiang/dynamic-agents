@@ -56,10 +56,33 @@ class DesktopHooks(unittest.TestCase):
             self.assertNotIn("/example/project", text)
             self.assertEqual(json.loads(text)["project"], "project")
 
-    def test_herdr_and_subagents_are_excluded_and_cursor_aborts_are_not_completed(self):
-        env = dict(self.environment, HERDR_ENV="1")
-        self.run_hook("report", "claude", "UserPromptSubmit", payload={"session_id": "a"}, environment=env)
-        self.assertFalse((self.directory / "data/events").exists())
+    def test_completion_time_survives_duplicate_stop_viewing_and_close_but_new_work_clears_it(self):
+        payload = {"session_id": "completion-example"}
+        self.run_hook("report", "codex", "Stop", payload=payload)
+        path = next((self.directory / "data/events").glob("*.json"))
+        event = json.loads(path.read_text())
+        completed = event["completedAt"] - 100
+        event["completedAt"] = completed
+        path.write_text(json.dumps(event))
+        for name in ["Stop", "SessionStart", "SessionEnd"]:
+            self.run_hook("report", "codex", name, payload=payload)
+            self.assertEqual(json.loads(path.read_text())["completedAt"], completed)
+        self.run_hook("report", "codex", "UserPromptSubmit", payload=payload)
+        self.assertNotIn("completedAt", json.loads(path.read_text()))
+        self.run_hook("report", "codex", "Interrupt", payload=payload)
+        self.assertNotIn("completedAt", json.loads(path.read_text()))
+
+    def test_host_app_hint_is_known_metadata_and_unknown_values_are_not_saved(self):
+        payload = {"session_id": "host-example"}
+        self.run_hook("report", "pi", "UserPromptSubmit", payload=payload,
+                      environment=dict(self.environment, TERM_PROGRAM="ghostty", __CFBundleIdentifier="unknown.app"))
+        path = next((self.directory / "data/events").glob("*.json"))
+        self.assertEqual(json.loads(path.read_text())["hostBundleIDHint"], "com.mitchellh.ghostty")
+        self.run_hook("report", "pi", "UserPromptSubmit", payload=payload,
+                      environment=dict(self.environment, TERM_PROGRAM="unknown", __CFBundleIdentifier="unknown.app"))
+        self.assertNotIn("hostBundleIDHint", json.loads(path.read_text()))
+
+    def test_subagents_are_excluded_and_cursor_aborts_are_not_completed(self):
         self.run_hook("report", "claude", "Stop", payload={"session_id": "a", "agent_id": "child"})
         self.assertFalse((self.directory / "data/events").exists())
         payload = {"conversation_id": "cursor-example", "status": "aborted"}
@@ -219,6 +242,45 @@ class DesktopHooks(unittest.TestCase):
         result = subprocess.run([sys.executable, str(SCRIPT), "install", "codex"], capture_output=True, env=self.environment, timeout=3)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(path.read_text(), "not valid json")
+
+
+    def test_pi_install_update_remove_preserves_other_extensions(self):
+        path = self.directory / "config/.pi/agent/settings.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({"theme": "example", "extensions": ["/example/other.ts"]}))
+        for _ in range(2):
+            self.run_hook("install", "pi")
+        value = json.loads(path.read_text())
+        self.assertEqual(len(value["extensions"]), 2)
+        self.assertEqual(value["extensions"][0], "/example/other.ts")
+        self.assertTrue(json.loads(self.run_hook("status", "pi").stdout)["current"])
+        extension = self.directory / "data/pi-hook.ts"
+        extension.write_text(extension.read_text() + "\n// prior version\n")
+        self.assertFalse(json.loads(self.run_hook("status", "pi").stdout)["current"])
+        self.run_hook("install", "pi")
+        self.assertTrue(json.loads(self.run_hook("status", "pi").stdout)["current"])
+        self.run_hook("remove", "pi")
+        value = json.loads(path.read_text())
+        self.assertEqual(value, {"theme": "example", "extensions": ["/example/other.ts"]})
+        self.assertFalse(json.loads(self.run_hook("status", "pi").stdout)["installed"])
+
+    def test_pi_metadata_and_final_outcomes(self):
+        payload = {"session_id": "pi-example", "runtime_pid": os.getpid(), "title": "Example\nName", "cwd": "/example/project", "prompt": "PRIVATE PROMPT"}
+        for event, status in [("SessionStart", "idle"), ("UserPromptSubmit", "working"), ("PermissionRequest", "blocked"), ("PostToolUse", "working"), ("Stop", "done"), ("Interrupt", "idle"), ("StopFailure", "unknown"), ("SessionEnd", "ended")]:
+            self.run_hook("report", "pi", event, payload=payload)
+            path = next((self.directory / "data/events").glob("*.json"))
+            text = path.read_text()
+            value = json.loads(text)
+            self.assertEqual(value["status"], status)
+            self.assertEqual(value["title"], "ExampleName")
+            self.assertEqual(value["runtimePID"], os.getpid())
+            self.assertNotIn("PRIVATE", text)
+            self.assertNotIn("/example/project", text)
+
+    def test_reports_are_not_suppressed_by_a_multiplexer_environment(self):
+        env = dict(self.environment, HERDR_ENV="1")
+        self.run_hook("report", "claude", "UserPromptSubmit", payload={"session_id": "example"}, environment=env)
+        self.assertEqual(json.loads(next((self.directory / "data/events").glob("*.json")).read_text())["status"], "working")
 
 
 if __name__ == "__main__":

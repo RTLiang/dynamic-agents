@@ -46,7 +46,7 @@ final class LiveActivityController {
     init() { message = L10n.text("Live Activities require the native app with its widget extension.") }
     #endif
 
-    func start(state: AgentActivityState, session: String) async {
+    func start(state: AgentActivityState) async {
         guard isSupported else { return }
         #if NATIVE_LIVE_ACTIVITIES
         if let activity, activity.activityState == .ended || activity.activityState == .dismissed {
@@ -57,10 +57,10 @@ final class LiveActivityController {
         #endif
         isEnabled = true
         UserDefaults.standard.set(true, forKey: "liveActivityEnabled")
-        await update(state, session: session)
+        await update(state)
     }
 
-    func update(_ state: AgentActivityState, session: String, force: Bool = false) async {
+    func update(_ state: AgentActivityState, force: Bool = false) async {
         #if NATIVE_LIVE_ACTIVITIES
         guard isEnabled, !isStarting else { return }
         if let activity, activity.activityState != .active && activity.activityState != .stale {
@@ -95,7 +95,7 @@ final class LiveActivityController {
                 guard requestGeneration == generation, isEnabled else { return }
             }
             activity = try Activity.request(
-                attributes: AgentActivityAttributes(sessionName: session.isEmpty ? L10n.text("Local herdr") : session),
+                attributes: AgentActivityAttributes(sessionName: L10n.text("Agent Hooks")),
                 content: ActivityContent(state: state, staleDate: Date.now.addingTimeInterval(90)),
                 pushType: nil
             )

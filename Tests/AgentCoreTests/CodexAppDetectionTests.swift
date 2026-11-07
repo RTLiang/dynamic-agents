@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import AgentCore
 
-private let codexApp = TerminalApplication(pid: 50, bundleID: "com.openai.codex", name: "ChatGPT", path: "/Applications/Example.app")
+private let codexApp = HostApplication(pid: 50, bundleID: "com.openai.codex", name: "ChatGPT", path: "/Applications/Example.app")
 private let liveCodex = ProcessRecord(pid: 51, parentPID: 50, executable: "/usr/local/bin/codex", startedAt: .distantPast)
 private func codexEvent(status: String = "working", project: String = "a", ancestors: [Int32] = [51, 50]) throws -> DesktopHookEvent {
     let data: [String: Any] = ["id": String(repeating: "a", count: 64), "source": "codex", "status": status,
@@ -50,8 +50,8 @@ private func codexEvent(status: String = "working", project: String = "a", ances
 @Test func codexCLIAndChatGPTAreNotClassifiedAsTheCodexApp() throws {
     let event = try codexEvent()
     for app in [
-        TerminalApplication(pid: 50, bundleID: "com.mitchellh.ghostty", name: "Ghostty", path: "/Applications/Ghostty.app"),
-        TerminalApplication(pid: 50, bundleID: "com.openai.chat", name: "ChatGPT", path: "/Applications/Example.app")
+        HostApplication(pid: 50, bundleID: "com.mitchellh.ghostty", name: "Ghostty", path: "/Applications/Ghostty.app"),
+        HostApplication(pid: 50, bundleID: "com.openai.chat", name: "ChatGPT", path: "/Applications/Example.app")
     ] {
         let agent = event.agent(applications: [app], now: .now, processes: [liveCodex])
         #expect(agent?.kindName == "Codex CLI · " + app.name)
@@ -72,8 +72,7 @@ private func codexEvent(status: String = "working", project: String = "a", ances
     let event = try codexEvent(status: "done")
     let result = event.agent(applications: [], now: .now)
     let agent = try #require(result)
-    var feed = AgentActivityFeed()
-    feed.observe([agent], at: .now)
+    let feed = AgentActivityFeed()
     #expect(agent.status == .done)
     #expect(agent.hostBundleID == nil)
     #expect(feed.agents(from: [agent], at: .now).count == 1)

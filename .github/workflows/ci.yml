@@ -21,10 +21,17 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
       - name: Test core and compile dashboard
         run: swift test --build-system native -j 3
       - name: Verify desktop hook adapters
         run: python3 scripts/test-desktop-hooks.py
+      - name: Verify Pi lifecycle extension
+        run: node scripts/test-pi-hook.mjs
+      - name: Verify app-only scope
+        run: python3 scripts/check-app-scope.py
       - name: Verify localization coverage
         run: python3 scripts/check-localizations.py
       - name: Verify generated Xcode project

@@ -2,325 +2,149 @@ import AppKit
 import ApplicationServices
 import Foundation
 
-func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-    var value: CFTypeRef?
-    _ = AXUIElementCopyAttributeValue(element, name as CFString, &value)
+func attribute(_ element: AXUIElement, _ key: String) -> CFTypeRef? { var value: CFTypeRef?; AXUIElementCopyAttributeValue(element, key as CFString, &value); return value }
+func all(_ element: AXUIElement, _ depth: Int = 0) -> [AXUIElement] {
+    guard depth < 22, attribute(element, kAXRoleAttribute) as? String != kAXMenuBarRole else { return [] }
+    return [element] + (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []).flatMap { all($0, depth + 1) }
+}
+func labels(_ element: AXUIElement) -> [String] { [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute, kAXHelpAttribute].compactMap { attribute(element, $0) as? String } }
+func tree(_ element: AXUIElement, _ depth: Int = 0) -> [String: Any] {
+    var value: [String: Any] = ["role": attribute(element, kAXRoleAttribute) as? String ?? ""]
+    for key in [kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute, kAXIdentifierAttribute] {
+        if let item = attribute(element, key) as? String { value[key] = item }
+    }
+    if depth < 18, attribute(element, kAXRoleAttribute) as? String != kAXMenuBarRole {
+        value["children"] = (attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []).map { tree($0, depth + 1) }
+    }
     return value
 }
-func find(_ element: AXUIElement, depth: Int = 0, matching: (AXUIElement) -> Bool) -> AXUIElement? {
-    guard depth < 22 else { return nil }
-    if matching(element) { return element }
-    for child in attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? [] {
-        if let match = find(child, depth: depth + 1, matching: matching) { return match }
+func require(_ condition: Bool, _ message: String) { if !condition { fputs("FAIL: " + message + "\n", stderr); exit(1) } }
+func wait(_ seconds: Double = 0.25) { RunLoop.current.run(until: .now.addingTimeInterval(seconds)) }
+let args = CommandLine.arguments
+require(args.count >= 7, "ax <pid> <bundle> <action> <language> <scratch> <evidence>")
+require(AXIsProcessTrusted(), "Accessibility permission is required for the verification tool")
+require((CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool != true, "macOS session locked")
+let pid = Int32(args[1])!
+let bundle = args[2], action = args[3], language = args[4]
+let scratch = URL(fileURLWithPath: args[5]), evidence = URL(fileURLWithPath: args[6])
+let zh = language == "zh-Hans"
+guard let app = NSRunningApplication(processIdentifier: pid), app.bundleIdentifier == bundle else { require(false, "wrong owned app"); exit(1) }
+let root = AXUIElementCreateApplication(pid)
+func node(_ id: String) -> AXUIElement? { all(root).first { attribute($0, kAXIdentifierAttribute) as? String == id } }
+func save(_ name: String) { if let data = try? JSONSerialization.data(withJSONObject: tree(root), options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: evidence.appendingPathComponent(name + ".json")) } }
+func press(_ element: AXUIElement?, _ name: String) {
+    guard let element else { save("failed-ui"); require(false, "control missing: " + name); return }
+    require(AXUIElementPerformAction(element, kAXPressAction as CFString) == .success, "press failed: " + name)
+    wait()
+    print("action: " + name)
+}
+func button(_ title: String) { press(all(root).first { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains(title) }, title) }
+func ready(_ id: String) -> AXUIElement? {
+    for _ in 0..<50 {
+        if let value = node(id), (attribute(value, kAXEnabledAttribute) as? NSNumber)?.boolValue != false { return value }
+        wait(0.1)
     }
     return nil
 }
-func labels(_ element: AXUIElement) -> [String] {
-    [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute].compactMap { attribute(element, $0) as? String }
-}
-func waitFor(_ seconds: TimeInterval = 0.4) { RunLoop.current.run(until: .now.addingTimeInterval(seconds)) }
-func require(_ condition: Bool, _ message: String) {
-    guard condition else { FileHandle.standardError.write(Data("FAIL: \(message)\n".utf8)); exit(1) }
-}
-func tree(_ element: AXUIElement, depth: Int = 0) -> [String: Any] {
-    let role = attribute(element, kAXRoleAttribute) as? String ?? ""
-    let identifiers = [kAXTitleAttribute, kAXDescriptionAttribute, kAXIdentifierAttribute, kAXValueAttribute, kAXHelpAttribute]
-    var result: [String: Any] = ["role": role]
-    for key in identifiers {
-        if let value = attribute(element, key) as? String, !value.isEmpty { result[key] = value }
-        else if let value = attribute(element, key) as? NSNumber { result[key] = value }
+func openHooks() { button(zh ? "设置" : "Settings"); press(ready("manage-agent-hooks"), "Manage Agent Hooks") }
+func closeHooks() { button(zh ? "完成" : "Done"); button(zh ? "取消" : "Cancel"); wait(1.2) }
+func strings() -> [String] { all(root).flatMap(labels) }
+func checkRows(_ count: Int) {
+    for _ in 0..<40 {
+        if strings().contains(zh ? "\(count) 个 Agent" : "\(count) \(count == 1 ? "agent" : "agents")") { return }
+        wait(0.1)
     }
-    if depth < 16, role != kAXMenuBarRole {
-        let children = attribute(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
-        if !children.isEmpty { result["children"] = children.map { tree($0, depth: depth + 1) } }
+    save("failed-row-count"); require(false, "expected \(count) agent rows")
+}
+func hostState() throws -> [String: Any] { try JSONSerialization.jsonObject(with: Data(contentsOf: scratch.appendingPathComponent("host-state.json"))) as! [String: Any] }
+func emit(_ events: [[String: Any]]) throws {
+    let token = Int(Date.now.timeIntervalSince1970 * 1000)
+    let data = try JSONSerialization.data(withJSONObject: ["token": token, "events": events])
+    try data.write(to: scratch.appendingPathComponent("host-command.json"), options: .atomic)
+    for _ in 0..<60 {
+        if let state = try? hostState(), state["completedToken"] as? Int == token { require(state["error"] as? String == "", "fixture reporting failed"); return }
+        wait(0.1)
     }
-    return result
+    require(false, "host fixture timeout")
 }
-let arguments = CommandLine.arguments
-require(arguments.count >= 4, "usage: ax <pid> <bundle-id> <doctor|snapshot|duration>")
-require(AXIsProcessTrusted(), "Accessibility permission is required for the tool launching this helper")
-if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
-   (session["CGSSessionScreenIsLocked"] as? NSNumber)?.boolValue == true {
-    require(false, "macOS session is locked; unlock before driving UI")
-}
-guard let pid = Int32(arguments[1]) else { require(false, "invalid PID"); exit(1) }
-var candidate: NSRunningApplication?
-for _ in 0..<50 {
-    candidate = NSRunningApplication(processIdentifier: pid)
-    if candidate?.bundleIdentifier == arguments[2] { break }
-    waitFor(0.1)
-}
-guard let app = candidate, app.bundleIdentifier == arguments[2], !app.isTerminated else { require(false, "wrong or missing app process"); exit(1) }
-let root = AXUIElementCreateApplication(pid)
-let action = arguments[3]
 if action == "doctor" {
-    var ready = false
-    for _ in 0..<50 {
-        let table = find(root) { attribute($0, kAXIdentifierAttribute) as? String == "agents-table" }
-        let first = find(root) { attribute($0, kAXValueAttribute) as? String == "Build example" }
-        let second = find(root) { attribute($0, kAXValueAttribute) as? String == "Review example" }
-        let connected = find(root) { attribute($0, kAXValueAttribute) as? String == "herdr connected" }
-        ready = table != nil && first != nil && second != nil && connected != nil
-        if ready { break }
-        waitFor(0.2)
-    }
-    if !ready, let data = try? JSONSerialization.data(withJSONObject: tree(root), options: [.prettyPrinted, .sortedKeys]) {
-        print(String(decoding: data, as: UTF8.self))
-    }
-    require(ready, "dashboard and both fixture agents are not ready")
-    print("ready: isolated app PID \(pid), connected dashboard with both fixture agents")
+    for _ in 0..<50 { if node("agents-table") != nil, (try? hostState()) != nil { break }; wait(0.1) }
+    require(node("agents-table") != nil, "dashboard missing")
+    checkRows(0)
+    require(!strings().contains(where: { $0.localizedCaseInsensitiveContains("herdr") }), "removed integration leaked into UI")
+    print("ready: empty hook-only dashboard and owned two-window host")
 } else if action == "snapshot" {
-    let data = try JSONSerialization.data(withJSONObject: tree(root), options: [.prettyPrinted, .sortedKeys])
-    print(String(decoding: data, as: UTF8.self))
-} else if action == "menu" {
-    guard let raw = attribute(root, "AXExtrasMenuBar"), CFGetTypeID(raw) == AXUIElementGetTypeID() else { print("menu icon: absent"); exit(0) }
-    let menu = raw as! AXUIElement
-    let items = attribute(menu, kAXChildrenAttribute) as? [AXUIElement] ?? []
-    let present = items.contains { labels($0).contains("Dynamic Agents") }
-    print("menu icon: \(present ? "present" : "absent")")
+    print(String(data: try JSONSerialization.data(withJSONObject: tree(root), options: [.prettyPrinted, .sortedKeys]), encoding: .utf8)!)
 } else if action == "press" {
-    require(arguments.count == 6, "usage: ax <pid> <bundle-id> press <AX-role> <label>")
-    guard let element = find(root, matching: { attribute($0, kAXRoleAttribute) as? String == arguments[4] && labels($0).contains(arguments[5]) }) else {
-        require(false, "element not found: \(arguments[4]) \(arguments[5])"); exit(1)
-    }
-    require(AXUIElementPerformAction(element, kAXPressAction as CFString) == .success, "AXPress failed")
-    waitFor()
-    print("pressed \(arguments[4]) \(arguments[5])")
-} else if action == "set" {
-    require(arguments.count == 6, "usage: ax <pid> <bundle-id> set <AXIdentifier> <value>")
-    guard let element = find(root, matching: {
-        if arguments[4].hasPrefix("role:") { return attribute($0, kAXRoleAttribute) as? String == String(arguments[4].dropFirst(5)) }
-        return attribute($0, kAXIdentifierAttribute) as? String == arguments[4]
-    }) else {
-        require(false, "identifier or role not found: \(arguments[4])"); exit(1)
-    }
-    require(AXUIElementSetAttributeValue(element, kAXValueAttribute as CFString, arguments[5] as CFString) == .success, "AXValue set failed")
-    waitFor()
-    print("set \(arguments[4]) = \(arguments[5])")
-} else if action == "type" {
-    require(arguments.count == 6, "usage: ax <pid> <bundle-id> type <AX-role> <text>")
-    guard let element = find(root, matching: { attribute($0, kAXRoleAttribute) as? String == arguments[4] }) else {
-        require(false, "text field not found"); exit(1)
-    }
-    _ = app.activate(options: [.activateAllWindows])
-    require(AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue) == .success, "cannot focus text field")
-    waitFor(0.2)
-    let select = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)!
-    select.flags = .maskCommand
-    select.postToPid(pid)
-    let selectUp = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)!
-    selectUp.flags = .maskCommand
-    selectUp.postToPid(pid)
-    if arguments[5].isEmpty {
-        CGEvent(keyboardEventSource: nil, virtualKey: 51, keyDown: true)?.postToPid(pid)
-        CGEvent(keyboardEventSource: nil, virtualKey: 51, keyDown: false)?.postToPid(pid)
-    }
-    for character in arguments[5] {
-        var units = Array(String(character).utf16)
-        let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true)!
-        down.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
-        down.postToPid(pid)
-        let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)!
-        up.keyboardSetUnicodeString(stringLength: units.count, unicodeString: &units)
-        up.postToPid(pid)
-    }
-    waitFor(1)
-    print("typed in \(arguments[4]): \(arguments[5])")
-} else if action == "integrations" {
-    _ = app.activate(options: [.activateAllWindows])
-    waitFor()
-    func press(_ element: AXUIElement?, _ description: String) {
-        guard let element else { require(false, "missing \(description)"); exit(1) }
-        require(AXUIElementPerformAction(element, kAXPressAction as CFString) == .success, "cannot press \(description)")
-        print("action: \(description)")
-        waitFor()
-    }
-    press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Connection Settings") }, "Connection Settings")
-    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "manage-agent-integrations" }, "Manage Integrations")
-    func expectRow(_ target: String, state: String) {
-        for _ in 0..<60 {
-            if let row = find(root, matching: { attribute($0, kAXIdentifierAttribute) as? String == "integration-row-\(target)" }),
-               let data = try? JSONSerialization.data(withJSONObject: tree(row)),
-               String(decoding: data, as: UTF8.self).contains(state) {
-                print("result: \(target) = \(state)")
-                return
-            }
-            waitFor(0.1)
-        }
-        require(false, "\(target) did not reach \(state)")
-    }
-    expectRow("codex", state: "Not Installed")
-    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "integration-install-codex" }, "Install Codex")
-    expectRow("codex", state: "Up to Date")
-    expectRow("claude", state: "Update Available")
-    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "integration-install-claude" }, "Update Claude Code")
-    expectRow("claude", state: "Up to Date")
-    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "integration-remove-codex" }, "Remove Codex")
-    expectRow("codex", state: "Not Installed")
-    print("PASS: agent-integrations")
-} else if action == "desktop-hooks" || action == "desktop-memory" {
-    let memoryJourney = action == "desktop-memory"
-    require(arguments.count == 6, "usage: ax <pid> <bundle-id> <desktop-hooks|desktop-memory> <run-id> <evidence-directory>")
-    let evidence = URL(fileURLWithPath: arguments[5], isDirectory: true)
-    func capture(_ name: String) throws {
-        let data = try JSONSerialization.data(withJSONObject: tree(root), options: [.prettyPrinted, .sortedKeys])
-        try data.write(to: evidence.appendingPathComponent(name + ".json"))
-    }
-    _ = app.activate(options: [.activateAllWindows])
-    waitFor()
-    func press(_ element: AXUIElement?, _ description: String) {
-        guard let element else { require(false, "missing \(description)"); exit(1) }
-        require(AXUIElementPerformAction(element, kAXPressAction as CFString) == .success, "cannot press \(description)")
-        print("action: \(description)")
-        waitFor()
-    }
-    press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Connection Settings") }, "Connection Settings")
-    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "manage-agent-integrations" }, "Manage Integrations")
-    press(find(root) { [kAXRadioButtonRole, kAXButtonRole].contains(attribute($0, kAXRoleAttribute) as? String ?? "") && labels($0).contains("Desktop Clients") }, "Desktop Clients")
-    func expect(_ source: String, label: String) -> AXUIElement {
-        let identifier = label == "Update" ? "desktop-hook-update-\(source)" : "desktop-hook-\(source)"
-        for _ in 0..<80 {
-            if let button = find(root, matching: { attribute($0, kAXIdentifierAttribute) as? String == identifier && labels($0).contains(label) }),
-               (attribute(button, kAXEnabledAttribute) as? NSNumber)?.boolValue == true { return button }
-            waitFor(0.1)
-        }
-        require(false, "desktop hook \(source) never became \(label)")
-        exit(1)
-    }
-    try capture("desktop-before-install")
-    for source in memoryJourney ? ["codex"] : ["claude", "codex", "cursor", "copilot"] {
-        press(expect(source, label: "Install"), "Install \(source) desktop hook")
-        _ = expect(source, label: "Remove")
-        print("result: \(source) installed")
-    }
-    guard let appURL = app.bundleURL else { require(false, "fixture app URL missing"); exit(1) }
-    let scratch = appURL.deletingLastPathComponent()
+    require(args.count == 9, "press <role> <label>")
+    press(all(root).first { attribute($0, kAXRoleAttribute) as? String == args[7] && labels($0).contains(args[8]) }, args[8])
+} else if action == "hooks" {
+    openHooks()
+    let sources = ["pi", "claude", "codex", "cursor", "copilot"]
+    for source in sources { press(ready("desktop-hook-" + source), "Install " + source) }
     let helper = scratch.appendingPathComponent("desktop-data/desktop-hook.py")
-    require(FileManager.default.fileExists(atPath: helper.path), "owned desktop helper missing")
-    if memoryJourney {
-        try capture("desktop-memory-installed")
-        let fixture = Process()
-        let repository = scratch.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        fixture.executableURL = repository.appendingPathComponent(".cursor/skills/verify-dynamic-agents/helpers/desktop-fixture")
-        fixture.arguments = [arguments[4]]
-        fflush(stdout)
-        try fixture.run()
-        fixture.waitUntilExit()
-        require(fixture.terminationStatus == 0, "Codex hook fixture failed")
-        func closeSettings() {
-            press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Done") }, "Done")
-            press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Cancel") }, "Cancel settings")
-        }
-        func expectDashboard(count: Int, hasUser: Bool) {
-            var ready = false
-            for _ in 0..<80 {
-                let user = find(root) { attribute($0, kAXValueAttribute) as? String == "Memory project example" }
-                let countLabel = find(root) { attribute($0, kAXValueAttribute) as? String == "\(count) agents" }
-                ready = countLabel != nil && (user != nil) == hasUser
-                if ready { break }
-                waitFor(0.1)
-            }
-            require(ready, "dashboard did not show \(count) agents with expected user session")
-            for title in ["Background memory example", "Background legacy memory example"] {
-                require(find(root) { attribute($0, kAXValueAttribute) as? String == title } == nil, "background memory appeared in dashboard")
-            }
-            if hasUser {
-                require(find(root) { attribute($0, kAXValueAttribute) as? String == "Completed" } != nil, "normal memory-project completion missing")
-                guard let table = find(root, matching: { attribute($0, kAXIdentifierAttribute) as? String == "agents-table" }) else { require(false, "agents table missing"); return }
-                func titles(_ node: AXUIElement) -> [String] {
-                    let value = attribute(node, kAXValueAttribute) as? String
-                    let own = value.map { ["Build example", "Memory project example", "Review example"].contains($0) ? [$0] : [] } ?? []
-                    return own + (attribute(node, kAXChildrenAttribute) as? [AXUIElement] ?? []).flatMap(titles)
-                }
-                var seen = Set<String>()
-                let ordered = titles(table).filter { seen.insert($0).inserted }
-                require(ordered == ["Build example", "Memory project example", "Review example"], "default order is not Running, Completed, Idle")
-                print("result: default row order is Running, Completed, Idle")
-            }
-            print("result: dashboard has \(count) agents; background memory absent; user completion \(hasUser ? "visible" : "removed")")
-        }
-        closeSettings()
-        expectDashboard(count: 3, hasUser: true)
-        try capture("desktop-memory-dashboard")
-        press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Connection Settings") }, "Connection Settings")
-        press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "manage-agent-integrations" }, "Manage Integrations")
-        press(find(root) { [kAXRadioButtonRole, kAXButtonRole].contains(attribute($0, kAXRoleAttribute) as? String ?? "") && labels($0).contains("Desktop Clients") }, "Desktop Clients")
-        press(expect("codex", label: "Remove"), "Remove Codex desktop hook")
-        _ = expect("codex", label: "Install")
-        closeSettings()
-        expectDashboard(count: 2, hasUser: false)
-        try capture("desktop-memory-removed")
-        print("PASS: desktop-memory")
-    } else {
-        let handle = try FileHandle(forWritingTo: helper)
-        try handle.seekToEnd()
-        try handle.write(contentsOf: Data("\n# Divergent fixture helper content\n".utf8))
-        try handle.close()
-        press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "desktop-hooks-refresh" }, "Refresh divergent desktop helper")
-        _ = expect("codex", label: "Update")
-        _ = expect("codex", label: "Remove")
-        print("result: installed Codex hook offers Update and Remove")
-        try capture("desktop-update-available")
-        press(expect("codex", label: "Update"), "Update Codex desktop helper")
-        for source in ["claude", "codex", "cursor", "copilot"] {
-            _ = expect(source, label: "Remove")
-            require(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "desktop-hook-update-\(source)" } == nil, "Update remained visible for \(source)")
-        }
-        try capture("desktop-after-update")
-        print("result: shared desktop helper updated for all installed sources; Update buttons absent")
-        for source in ["claude", "codex", "cursor", "copilot"] {
-            press(expect(source, label: "Remove"), "Remove \(source) desktop hook")
-            _ = expect(source, label: "Install")
-            print("result: \(source) removed")
-        }
-        try capture("desktop-after-remove")
-        print("PASS: desktop-hooks")
+    var data = try Data(contentsOf: helper)
+    data.append(Data("\n# previous helper\n".utf8)); try data.write(to: helper)
+    press(ready("desktop-hooks-refresh"), "Refresh outdated state")
+    for _ in 0..<30 { if node("desktop-hook-update-pi") != nil { break }; wait(0.1) }
+    press(ready("desktop-hook-update-pi"), "Update shared helper")
+    for _ in 0..<30 { if sources.allSatisfy({ node("desktop-hook-update-" + $0) == nil }) { break }; wait(0.1) }
+    require(sources.allSatisfy { node("desktop-hook-update-" + $0) == nil }, "Update prompts did not clear")
+    save("hooks-installed")
+    closeHooks()
+    try emit([
+        ["source": "claude", "event": "UserPromptSubmit", "payload": ["session_id": "fixture-build", "cwd": "/example/Build example"]],
+        ["source": "claude", "event": "SessionStart", "payload": ["session_id": "fixture-idle", "cwd": "/example/Review example"]]
+    ])
+    checkRows(2)
+    let producer = Process()
+    producer.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    producer.arguments = ["python3", URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("desktop-fixture").path, scratch.lastPathComponent]
+    try producer.run(); producer.waitUntilExit(); require(producer.terminationStatus == 0, "memory fixture failed")
+    wait(1.2); checkRows(3)
+    let values = strings()
+    require(!values.contains("Background memory example") && !values.contains("Background legacy memory example"), "background sessions visible")
+    guard let table = node("agents-table") else { exit(1) }
+    let tableValues = all(table).flatMap(labels)
+    guard let work = tableValues.firstIndex(of: "Build example"), let done = tableValues.firstIndex(of: "Memory project example"), let idle = tableValues.firstIndex(of: "Review example") else { require(false, "expected fixture sessions absent"); exit(1) }
+    require(work < done && done < idle, "default row order is not Running, Completed, Idle")
+    save("hooks-dashboard")
+    guard let cell = all(table).first(where: { labels($0).contains("Build example") }) else { exit(1) }
+    var row: AXUIElement? = cell
+    for _ in 0..<12 {
+        if row.flatMap({ attribute($0, kAXRoleAttribute) as? String }) == kAXRowRole { break }
+        guard let current = row, let parent = attribute(current, kAXParentAttribute), CFGetTypeID(parent) == AXUIElementGetTypeID() else { row = nil; break }
+        row = (parent as! AXUIElement)
     }
-} else if action == "duration" {
-    _ = app.activate(options: [.activateAllWindows])
-    waitFor()
-    func openSettings() -> AXUIElement {
-        guard let button = find(root, matching: { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Connection Settings") }) else {
-            require(false, "Connection Settings toolbar button missing"); exit(1)
-        }
-        require(AXUIElementPerformAction(button, kAXPressAction as CFString) == .success, "cannot open settings")
-        waitFor()
-        guard let sheet = find(root, matching: { attribute($0, kAXRoleAttribute) as? String == kAXSheetRole }) else {
-            require(false, "settings sheet missing"); exit(1)
-        }
-        print("action: open Connection Settings; result: settings sheet")
-        return sheet
-    }
-    func edit(_ sheet: AXUIElement, value: String, button: String) {
-        guard let field = find(sheet, matching: { attribute($0, kAXIdentifierAttribute) as? String == "completion-window-minutes" }) else {
-            require(false, "completion-window-minutes field missing"); exit(1)
-        }
-        require(AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, value as CFString) == .success, "cannot enter duration")
-        guard let action = find(sheet, matching: { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains(button) }) else {
-            require(false, "\(button) button missing"); exit(1)
-        }
-        require(AXUIElementPerformAction(action, kAXPressAction as CFString) == .success, "cannot press \(button)")
-        waitFor()
-        print("action: enter \(value), press \(button); result: sheet closed")
-        require(find(root, matching: { attribute($0, kAXRoleAttribute) as? String == kAXSheetRole }) == nil, "sheet stayed open")
-    }
-    func storedMinutes() -> Int? {
-        CFPreferencesAppSynchronize(arguments[2] as CFString)
-        return (CFPreferencesCopyAppValue("completionWindowMinutes" as CFString, arguments[2] as CFString) as? NSNumber)?.intValue
-    }
-    edit(openSettings(), value: "7", button: "Save")
-    require(storedMinutes() == 7, "saved duration is not 7")
-    print("result: isolated preference completionWindowMinutes = 7")
-    let sheet = openSettings()
-    guard let field = find(sheet, matching: { attribute($0, kAXIdentifierAttribute) as? String == "completion-window-minutes" }) else {
-        require(false, "duration field missing after reopen"); exit(1)
-    }
-    require((attribute(field, kAXValueAttribute) as? String) == "7", "reopened setting does not show 7")
-    print("result: reopened duration field = 7")
-    edit(sheet, value: "3", button: "Cancel")
-    require(storedMinutes() == 7, "cancel changed persisted duration")
-    print("result: cancelled edit left isolated preference at 7")
-    print("PASS: settings-duration")
-} else {
-    require(false, "unknown action")
-}
+    guard let row else { require(false, "fixture row unavailable"); exit(1) }
+    let selected = AXUIElementSetAttributeValue(table, kAXSelectedRowsAttribute as CFString, [row] as CFArray)
+    if selected != .success { require(AXUIElementSetAttributeValue(row, kAXSelectedAttribute as CFString, kCFBooleanTrue) == .success, "row selection failed") }
+    wait()
+    let before = try hostState()
+    button(zh ? "打开 App" : "Open App")
+    let hostPID = (before["pid"] as! NSNumber).int32Value
+    for _ in 0..<30 { if NSWorkspace.shared.frontmostApplication?.processIdentifier == hostPID { break }; wait(0.1) }
+    wait()
+    let after = try hostState()
+    require(NSWorkspace.shared.frontmostApplication?.processIdentifier == hostPID && !app.isActive, "wrong host app activated")
+    require(before["lastKeyWindow"] as? String == after["lastKeyWindow"] as? String && after["windowCount"] as? Int == 2, "host window selection changed")
+    try JSONSerialization.data(withJSONObject: ["before": before, "after": after, "passed": true], options: [.prettyPrinted]).write(to: evidence.appendingPathComponent("app-only-activation.json"))
+    print("result: exact host app activated; its selected window and window count preserved")
+    app.activate(); wait()
+    openHooks()
+    for source in sources { press(ready("desktop-hook-" + source), "Remove " + source) }
+    save("hooks-removed")
+    closeHooks(); checkRows(0)
+    print("PASS: five hook adapters, helper update, user/memory filtering, row ordering and app-only activation")
+} else if action == "settings" {
+    button(zh ? "设置" : "Settings")
+    guard let field = node("completion-window-minutes") else { exit(1) }
+    require(AXUIElementSetAttributeValue(field, kAXValueAttribute as CFString, "7" as CFString) == .success, "duration edit failed")
+    button(zh ? "保存" : "Save")
+    button(zh ? "设置" : "Settings")
+    require(node("completion-window-minutes").flatMap { attribute($0, kAXValueAttribute) as? String } == "7", "saved duration missing")
+    button(zh ? "取消" : "Cancel")
+    print("PASS: hook-only settings Save/reopen/Cancel")
+} else if action == "menu" {
+    print("status item: " + (attribute(root, "AXExtrasMenuBar") == nil ? "absent" : "present"))
+} else { require(false, "unknown action") }

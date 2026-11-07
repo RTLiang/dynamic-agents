@@ -17,26 +17,24 @@ enum LiveActivityVerification {
                 if NSApp.isActive { break }
                 try await Task.sleep(for: .milliseconds(100))
             }
-            guard NSApp.isActive else { throw HerdrError.message("The verification app did not become active before starting the activity.") }
+            guard NSApp.isActive else { throw AgentError.message("The verification app did not become active before starting the activity.") }
             await store.refresh()
             let initial = store.activityState
-            guard initial.total > 0 else { throw HerdrError.message("A running agent is required for native verification.") }
+            guard initial.total > 0 else { throw AgentError.message("A running agent is required for native verification.") }
             await store.liveActivity.finish()
             report["agentCount"] = initial.total
             let verifier = LiveActivityController()
-            await verifier.start(state: initial, session: store.session)
+            await verifier.start(state: initial)
             guard verifier.isRunning, let status = verifier.status, let activityID = status.activityID, status.activeCount == 1 else {
-                throw HerdrError.message(verifier.message ?? "ActivityKit did not return an active activity.")
+                throw AgentError.message(verifier.message ?? "ActivityKit did not return an active activity.")
             }
             report["authorized"] = status.authorized
             report["startedID"] = activityID
             report["startedState"] = "active"
-            let latest = try await store.client.snapshot()
-            var feed = AgentActivityFeed()
-            feed.observe(latest.trackedAgents, at: .now)
-            let updated = AgentActivityState(agents: feed.agents(from: latest.trackedAgents, at: .now), workspaces: latest.workspaces, prioritizeRunning: true, itemLimit: .max)
+            await store.refresh()
+            let updated = store.activityState
             let beforeUpdate = Date.now
-            await verifier.update(updated, session: store.session, force: true)
+            await verifier.update(updated, force: true)
             for _ in 0..<20 {
                 if verifier.status?.state == updated && (verifier.status?.staleDate ?? .distantPast) > beforeUpdate.addingTimeInterval(80) { break }
                 try await Task.sleep(for: .milliseconds(100))
@@ -46,9 +44,9 @@ enum LiveActivityVerification {
             await verifier.stop()
             report["ended"] = !verifier.isRunning && verifier.status?.activeCount == 0
             report["endedState"] = "ended"
-            await store.liveActivity.start(state: updated, session: store.session)
-            let empty = AgentActivityState(agents: [], workspaces: [])
-            await store.liveActivity.update(empty, session: store.session)
+            await store.liveActivity.start(state: updated)
+            let empty = AgentActivityState(agents: [])
+            await store.liveActivity.update(empty)
             report["hiddenWhenEmpty"] = !store.liveActivity.isRunning && store.liveActivity.isEnabled && store.liveActivity.status?.activeCount == 0
             let handoff = await BackgroundHandoffVerification.run(store: store)
             report["backgroundHandoff"] = handoff

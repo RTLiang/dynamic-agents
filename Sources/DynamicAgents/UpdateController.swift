@@ -24,7 +24,7 @@ final class UpdateController {
         defer { isChecking = false }
         do {
             let release = try await AppRelease.latest()
-            guard let current = ReleaseVersion(Self.currentVersion) else { throw HerdrError.message(L10n.text("The installed app has an invalid version.")) }
+            guard let current = ReleaseVersion(Self.currentVersion) else { throw AgentError.message(L10n.text("The installed app has an invalid version.")) }
             availableRelease = release.flatMap { $0.version > current ? $0 : nil }
             if manual {
                 if let availableRelease {

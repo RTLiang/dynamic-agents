@@ -44,9 +44,9 @@ widget_sources = [
     "Sources/DynamicAgents/Shared/ActivityPanel.swift",
     "WidgetExtension/FocusAgentIntent.swift", "WidgetExtension/AgentLiveActivityWidget.swift",
 ]
-all_files = sorted(set(app_sources + widget_sources + ["Resources/Info.plist", "Resources/Widget-Info.plist", "Resources/App.entitlements", "Resources/Widget.entitlements", "Resources/AppIcon.icon", "Sources/AgentCore/Resources/desktop-hook.py"]))
+all_files = sorted(set(app_sources + widget_sources + ["Resources/Info.plist", "Resources/Widget-Info.plist", "Resources/App.entitlements", "Resources/Widget.entitlements", "Resources/AppIcon.icon", "Sources/AgentCore/Resources/desktop-hook.py", "Sources/AgentCore/Resources/pi-hook.ts"]))
 for path in all_files:
-    file_type = "sourcecode.swift" if path.endswith(".swift") else ("folder.iconcomposer.icon" if path.endswith(".icon") else ("text.script.python" if path.endswith(".py") else "text.plist.xml"))
+    file_type = "sourcecode.swift" if path.endswith(".swift") else ("folder.iconcomposer.icon" if path.endswith(".icon") else ("text.script.python" if path.endswith(".py") else "text" if path.endswith(".ts") else "text.plist.xml"))
     obj(path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="SOURCE_ROOT")
 for name, extension, file_type in [("DynamicAgents", "app", "wrapper.application"), ("DynamicAgentsWidgets", "appex", "wrapper.app-extension")]:
     obj(name + "-product", "PBXFileReference", explicitFileType=file_type, path=name + "." + extension, sourceTree="BUILT_PRODUCTS_DIR")
@@ -75,6 +75,8 @@ for target, sources in [("DynamicAgents", app_sources), ("DynamicAgentsWidgets",
         resources.append(ref("icon-build"))
         obj("desktop-hook-resource", "PBXBuildFile", fileRef=ref("Sources/AgentCore/Resources/desktop-hook.py"))
         resources.append(ref("desktop-hook-resource"))
+        obj("pi-hook-resource", "PBXBuildFile", fileRef=ref("Sources/AgentCore/Resources/pi-hook.ts"))
+        resources.append(ref("pi-hook-resource"))
     obj(target + "-resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=resources, runOnlyForDeploymentPostprocessing=0)
 
 obj("embed-file", "PBXBuildFile", fileRef=ref("DynamicAgentsWidgets-product"), settings={"ATTRIBUTES": ["RemoveHeadersOnCopy"]})

@@ -20,7 +20,7 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
     public var languageIdentifier: String?
     public var locale: Locale { Locale(identifier: languageIdentifier ?? L10n.preferredLanguage) }
     public var headline: String {
-        if !connected { return L10n.text("herdr connection lost") }
+        if !connected { return L10n.text("Hook monitoring unavailable") }
         if working > 0 { return L10n.format("agent.running", Int64(working)) }
         if blocked > 0 { return L10n.format("agent.waiting", Int64(blocked)) }
         if done > 0 { return L10n.format("agent.completed", Int64(done)) }
@@ -48,7 +48,7 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
         if done > 0 { return .done }
         return .idle
     }
-    public init(agents: [Agent], workspaces: [Workspace], connected: Bool = true, prioritizeRunning: Bool = false, itemLimit: Int = 3,
+    public init(agents: [Agent], connected: Bool = true, prioritizeRunning: Bool = false, itemLimit: Int = 3,
                 languageIdentifier: String? = L10n.preferredLanguage) {
         self.languageIdentifier = languageIdentifier
         self.connected = connected
@@ -56,7 +56,6 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
         blocked = agents.filter { $0.status == .blocked }.count
         done = agents.filter { $0.status == .done }.count
         total = agents.count
-        let names = workspaces.reduce(into: [String: String]()) { $0[$1.id] = $1.label }
         let ordered = agents.sorted {
             if prioritizeRunning, ($0.status == .working) != ($1.status == .working) { return $0.status == .working }
             if $0.status.priority != $1.status.priority { return $0.status.priority < $1.status.priority }
@@ -66,8 +65,8 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
         var remaining = 3600
         for agent in ordered.prefix(max(0, itemLimit)) {
             let item = Item(id: Self.bounded(agent.id, bytes: 64), title: Self.bounded(agent.title, bytes: 320),
-                            kind: Self.bounded(agent.kind ?? "agent", bytes: 48), status: agent.status,
-                            project: Self.bounded(names[agent.workspaceID] ?? agent.workspaceID, bytes: 100),
+                            kind: Self.bounded(agent.kind, bytes: 48), status: agent.status,
+                            project: Self.bounded(agent.projectName, bytes: 100),
                             displayAgent: Self.bounded(agent.kindName, bytes: 100))
             guard let encoded = try? JSONEncoder().encode(item), encoded.count + 1 <= remaining else { break }
             items.append(item)

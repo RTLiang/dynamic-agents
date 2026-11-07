@@ -1,50 +1,48 @@
 # Local releases and code checks
 
-CI runs the `Checks` workflow for Swift tests, desktop-hook tests, localization, generated-project consistency, shell syntax, and Companion compilation. CI does not build or publish release archives. Version tags do not trigger a release workflow.
+CI runs Swift tests, Python installer/report tests, the Pi extension lifecycle journey, scope and localization checks, generated-project consistency, shell syntax and Companion compilation. CI does not publish releases.
 
-## Build the native release on a Mac
+## Build on a local Mac
 
-Use an Apple silicon Mac with a macOS 27.3 SDK, `trash`, and GitHub CLI. The native release contains the main App and Widget. The SwiftPM Companion does not contain a Widget and must not be uploaded as the native release.
+Use Apple silicon, a macOS 27.3+ SDK, Python 3, Node 24+, trash, hdiutil and GitHub CLI. The native package contains the main App and its Widget; the SwiftPM Companion has no Widget.
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
   swift test --build-system native -j 4
 python3 scripts/test-desktop-hooks.py
+node scripts/test-pi-hook.mjs
 python3 scripts/check-localizations.py
+python3 scripts/check-app-scope.py
 python3 scripts/generate-project.py
 
-APP_VERSION=0.1.1 APP_BUILD=33 APP_SIGNING_IDENTITY=- \
+APP_VERSION=0.2.0 APP_BUILD=35 APP_SIGNING_IDENTITY=- \
   bash scripts/package-release.sh
 ```
 
-`package-release.sh` builds locally and verifies matching app/Widget versions, arm64 architecture, minimum macOS version, both languages, a valid bundle structure, and the absence of auxiliary Apps. Builds strip debug maps before signing, and packaging rejects embedded local user paths. It produces these ignored artifacts:
+Packaging verifies matching app/Widget versions, arm64 architecture, deployment target, both languages, bundled Pi extension and no auxiliary App or Automation permission. Debug maps are stripped before signing; embedded local user paths are rejected. It creates a compressed DMG containing DynamicAgents.app and an Applications shortcut, verifies the disk image and produces:
 
-- `dist/releases/DynamicAgents-0.1.1-arm64.zip`
-- `dist/releases/DynamicAgents-0.1.1-arm64.zip.sha256`
-- `dist/releases/DynamicAgents-0.1.1-arm64.zip.manifest.json`
+- dist/releases/DynamicAgents-0.2.0-arm64.dmg
+- dist/releases/DynamicAgents-0.2.0-arm64.dmg.sha256
+- dist/releases/DynamicAgents-0.2.0-arm64.dmg.manifest.json
 
-The manifest identifies the source commit and whether the checkout was dirty. Publishing requires a clean build from a commit already on `origin/main`. Finish and push source changes, then package the final revision. Do not rebuild an installed, authorized App just to repeat a test: an ad-hoc identity change can require renewing its Accessibility grant.
+The manifest records source commit, dirty state, SDK, build and DMG format. Publish only from clean source already pushed to origin/main. Mount the final image read-only without opening Finder, verify the contained app/Widget versions, resources, signatures and Applications shortcut, then detach only that owned mount.
 
-## Signing and first launch
+## Signing and installation
 
-Public packages use no Apple Developer ID certificate and are not notarized. Native Apple silicon executables and the sandboxed Widget retain the local ad-hoc signature needed to run. Removing that signature is not equivalent to disabling Gatekeeper: a user-side Open Anyway approval cannot repair a binary that the platform cannot execute.
+Public packages use the required local ad-hoc execution signature without Developer ID signing or notarization. Users open the DMG, drag the App to Applications, eject and launch the installed copy. If macOS blocks first launch, use Privacy & Security → Open Anyway. Host-App activation needs no Accessibility or Automation grant. Password and Touch ID prompts remain with the user.
 
-Users approve first launch in **System Settings → Privacy & Security → Open Anyway** when macOS offers it. Terminal navigation also needs **Accessibility** and the terminal's **Automation** permission. After replacing an ad-hoc App, an enabled old Accessibility entry can refer to the previous identity; the user can remove that one entry and add the new App from Applications. The user completes authentication. The app and tooling do not change the TCC database or handle passwords.
+## Publish
 
-## Publish the verified local archive
-
-Create English/Chinese notes in `docs/releases/<version>.md`. Run the project verification skill against the features that changed and retain evidence under ignored `.build/`. Publishing only uploads the existing local archive; it does not invoke CI or rebuild it.
+Write bilingual release notes, run the relevant [UI verification journeys](../.cursor/skills/verify-dynamic-agents/SKILL.md), commit/push and package the final clean revision locally.
 
 ```bash
-bash scripts/publish-release.sh 0.1.1 docs/releases/0.1.1.md
+bash scripts/publish-release.sh 0.2.0 docs/releases/0.2.0.md
 ```
 
-The publisher verifies the checksum and manifest, checks that the source revision is clean and on `origin/main`, refuses an existing release, and uses `gh release create --target <commit>` to create the version tag and upload the files. It refuses to run in GitHub Actions. Published assets are not silently overwritten.
+The publisher validates checksum, source, clean manifest, DMG format and signing policy. It refuses existing releases and conflicting tags, then uploads the existing local DMG, checksum and manifest using GitHub CLI. It does not rebuild or invoke CI. Verify the public release tag, source, asset names and downloaded DMG checksum afterward.
 
-After publishing, verify the public release tag, asset names, source commit and downloaded ZIP checksum. The GitHub release must expose `DynamicAgents-<version>-arm64.zip`; the app's update checker recognizes that name.
+## Update checks
 
-## In-app update checks
+The app accepts stable versions from this repository with the exact DynamicAgents-<version>-arm64.dmg asset. It opens the release page without installing. Automatic checks run at most daily and can be disabled; no session data is uploaded. Versions 0.1.x accepted only ZIP assets, so users upgrading from those versions must visit the Releases page manually.
 
-The app checks the public latest-release API, accepts stable semantic versions from this repository, and opens the release page rather than installing anything. Automatic checks run at most daily and can be disabled. Manual checks show the result. No session content is uploaded.
-
-The verification Companion disables automatic checks with process-local launch arguments. CI tests do not establish native Widget presentation, system clicks, vendor hook trust, or terminal navigation; those have separate local journeys.
+Controlled UI, direct actions, native lifecycle, vendor trust and actual system Widget clicks provide different evidence. Record only the journeys actually performed for the new binary.

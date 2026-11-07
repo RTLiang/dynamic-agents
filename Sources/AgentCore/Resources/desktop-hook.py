@@ -12,6 +12,7 @@ import sys
 import time
 
 SOURCES = {
+    "pi": (".pi/agent/settings.json", []),
     "claude": (".claude/settings.json", ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "StopFailure", "SessionEnd"]),
     "codex": (".codex/hooks.json", ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "Interrupt", "SessionEnd"]),
     "cursor": (".cursor/hooks.json", ["sessionStart", "beforeSubmitPrompt", "afterAgentThought", "stop", "sessionEnd"]),
@@ -43,10 +44,10 @@ def atomic_json(path, value):
 
 
 def config_path(source):
-    overrides = {"claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME", "cursor": "CURSOR_CONFIG_DIR", "copilot": "COPILOT_HOME"}
+    overrides = {"pi": "PI_CODING_AGENT_DIR", "claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME", "cursor": "CURSOR_CONFIG_DIR", "copilot": "COPILOT_HOME"}
     if os.environ.get(overrides[source]) and "DYNAMIC_AGENTS_CONFIG_HOME" not in os.environ:
         base = Path(os.environ[overrides[source]])
-        name = {"claude": "settings.json", "codex": "hooks.json", "cursor": "hooks.json", "copilot": "hooks/dynamic-agents.json"}[source]
+        name = {"pi": "settings.json", "claude": "settings.json", "codex": "hooks.json", "cursor": "hooks.json", "copilot": "hooks/dynamic-agents.json"}[source]
         return base / name
     return HOME / SOURCES[source][0]
 
@@ -66,7 +67,52 @@ def managed(entry):
     return any(isinstance(x, dict) and owned_command(x.get("command", "")) for x in commands)
 
 
+def configure_pi(action):
+    path = config_path("pi")
+    if path.is_symlink():
+        raise ValueError("Refusing a symlinked Pi configuration")
+    original = path.read_bytes() if path.exists() else None
+    value = json.loads(original) if original else {}
+    if not isinstance(value, dict) or not isinstance(value.get("extensions", []), list):
+        raise ValueError("Unsupported Pi extensions configuration")
+    extension = ROOT / "pi-hook.ts"
+    script = ROOT / "desktop-hook.py"
+    entries = value.get("extensions", [])
+    installed = str(extension) in entries and script.is_file() and not script.is_symlink() and extension.is_file() and not extension.is_symlink()
+    current = installed and script.read_bytes() == Path(__file__).read_bytes() and extension.read_bytes() == Path(__file__).with_name("pi-hook.ts").read_bytes()
+    if action == "status":
+        print(json.dumps({"installed": installed, "current": current}))
+        return
+    private_directory(ROOT)
+    private_directory(ROOT / "events")
+    if script.is_symlink() or extension.is_symlink():
+        raise ValueError("Refusing a symlinked Pi bridge")
+    if action == "install":
+        script.write_bytes(Path(__file__).read_bytes())
+        script.chmod(0o700)
+        extension.write_bytes(Path(__file__).with_name("pi-hook.ts").read_bytes())
+        extension.chmod(0o600)
+    value["extensions"] = [entry for entry in entries if entry != str(extension)]
+    if action == "install":
+        value["extensions"].append(str(extension))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if original is not None:
+        backup = path.with_name(path.name + ".dynamic-agents-backup-" + str(time.time_ns()))
+        with backup.open("xb") as handle:
+            handle.write(original)
+        backup.chmod(0o600)
+    atomic_json(path, value)
+    enabled_path = ROOT / "sources.json"
+    enabled = json.loads(enabled_path.read_text()) if enabled_path.exists() and not enabled_path.is_symlink() else {}
+    enabled["pi"] = action == "install"
+    atomic_json(enabled_path, enabled)
+    print(json.dumps({"installed": action == "install", "current": action == "install"}))
+
+
 def configure(source, action):
+    if source == "pi":
+        configure_pi(action)
+        return
     path = config_path(source)
     if path.is_symlink():
         raise ValueError("Refusing a symlinked hook configuration")
@@ -135,6 +181,14 @@ def configure(source, action):
     if source == "codex" and action == "install":
         suppress_legacy_codex_background_reports()
     print(json.dumps({"installed": action == "install", "current": action == "install"}))
+
+
+def host_app_hint():
+    programs = {"ghostty": "com.mitchellh.ghostty", "iterm.app": "com.googlecode.iterm2", "apple_terminal": "com.apple.Terminal", "vscode": "com.microsoft.VSCode", "cursor": "com.todesktop.230313mzl4w4u92", "wezterm": "com.github.wez.wezterm", "warpterminal": "dev.warp.Warp-Stable"}
+    bundle = os.environ.get("__CFBundleIdentifier", "")
+    if bundle in set(programs.values()) | {"com.openai.codex", "com.anthropic.claudefordesktop"}:
+        return bundle
+    return programs.get(os.environ.get("TERM_PROGRAM", "").lower())
 
 
 def ancestry():
@@ -237,7 +291,7 @@ def suppress_legacy_codex_background_reports():
 
 
 def report(source, event):
-    if os.environ.get("HERDR_ENV") == "1":
+    if source not in SOURCES:
         return
     enabled_path = ROOT / "sources.json"
     if enabled_path.exists() and json.loads(enabled_path.read_text()).get(source) is False:
@@ -312,6 +366,23 @@ def report(source, event):
         record = {"id": key, "source": source, "status": status, "sequence": received,
                   "timestamp": now, "project": project[:120],
                   "ancestorPIDs": [] if session_kind == "background" else ancestry()}
+        hint = host_app_hint()
+        if hint is not None:
+            record["hostBundleIDHint"] = hint
+        previous_completion = old.get("completedAt", old.get("timestamp") if old.get("status") == "done" else None)
+        if not isinstance(previous_completion, (int, float)) or isinstance(previous_completion, bool) or not 0 <= previous_completion <= now:
+            previous_completion = None
+        if status == "done":
+            record["completedAt"] = previous_completion if old.get("status") == "done" and previous_completion is not None else now
+        elif status in ("idle", "ended") and event != "Interrupt" and session_kind != "background" and previous_completion is not None:
+            record["completedAt"] = previous_completion
+        if source == "pi":
+            title = payload.get("title")
+            if isinstance(title, str):
+                record["title"] = "".join(c for c in title if ord(c) >= 32)[:240]
+            runtime = payload.get("runtime_pid")
+            if isinstance(runtime, int) and not isinstance(runtime, bool) and runtime > 1:
+                record["runtimePID"] = runtime
         if session_kind is not None:
             record["codexSessionKind"] = session_kind
         atomic_json(path, record)

@@ -13,7 +13,7 @@ import Testing
 }
 
 private func releaseFixture(tag: String = "v1.10.0", draft: Bool = false, prerelease: Bool = false,
-                            page: String? = nil, download: String? = nil, filename: String = "DynamicAgents-1.10.0-arm64.zip") throws -> Data {
+                            page: String? = nil, download: String? = nil, filename: String = "DynamicAgents-1.10.0-arm64.dmg") throws -> Data {
     try JSONSerialization.data(withJSONObject: [
         "tag_name": tag, "draft": draft, "prerelease": prerelease,
         "html_url": page ?? "https://github.com/RTLiang/dynamic-agents/releases/tag/" + tag,
@@ -21,22 +21,23 @@ private func releaseFixture(tag: String = "v1.10.0", draft: Bool = false, prerel
     ])
 }
 
-@Test func releaseRequiresStableTagAndTheNativeArchive() throws {
+@Test func releaseRequiresStableTagAndTheNativeDMG() throws {
     let decoded = try AppRelease.decode(releaseFixture())
     let release = try #require(decoded)
     #expect(release.version == ReleaseVersion("1.10.0"))
-    #expect(release.downloadURL.lastPathComponent == "DynamicAgents-1.10.0-arm64.zip")
+    #expect(release.downloadURL.lastPathComponent == "DynamicAgents-1.10.0-arm64.dmg")
     #expect(try AppRelease.decode(releaseFixture(draft: true)) == nil)
     #expect(try AppRelease.decode(releaseFixture(prerelease: true)) == nil)
     #expect(try AppRelease.decode(releaseFixture(tag: "v1.10.0-beta")) == nil)
-    #expect(try AppRelease.decode(releaseFixture(filename: "DynamicAgents-Companion.zip")) == nil)
+    #expect(try AppRelease.decode(releaseFixture(filename: "DynamicAgents-Companion.dmg")) == nil)
+    #expect(try AppRelease.decode(releaseFixture(filename: "DynamicAgents-1.10.0-arm64.zip")) == nil)
 }
 
 @Test func updateLinksStayWithinTheExpectedRepositoryAndTag() throws {
     for page in ["https://example.invalid/release", "http://github.com/RTLiang/dynamic-agents/releases/tag/v1.10.0", "https://github.com/another/repo/releases/tag/v1.10.0"] {
         #expect(try AppRelease.decode(releaseFixture(page: page)) == nil)
     }
-    for url in ["https://example.invalid/app.zip", "https://github.com/another/repo/releases/download/v1.10.0/DynamicAgents-1.10.0-arm64.zip", "https://github.com/RTLiang/dynamic-agents/releases/download/v1.9.0/DynamicAgents-1.10.0-arm64.zip"] {
+    for url in ["https://example.invalid/app.zip", "https://github.com/another/repo/releases/download/v1.10.0/DynamicAgents-1.10.0-arm64.dmg", "https://github.com/RTLiang/dynamic-agents/releases/download/v1.9.0/DynamicAgents-1.10.0-arm64.dmg"] {
         #expect(try AppRelease.decode(releaseFixture(download: url)) == nil)
     }
 }

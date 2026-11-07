@@ -21,6 +21,8 @@ assert widget["CFBundleIdentifier"] == main["CFBundleIdentifier"] + ".widgets", 
 assert not list((app / "Contents/Helpers").glob("*.app")), "A native release must not embed an auxiliary application"
 assert main["NSSupportsLiveActivities"] is True, "A native release must support Live Activities"
 assert tuple(map(int, main["LSMinimumSystemVersion"].split("."))) >= (27, 3), "Incorrect deployment target"
+assert (app / "Contents/Resources/pi-hook.ts").is_file(), "Missing Pi hook extension"
+assert "NSAppleEventsUsageDescription" not in main, "Host-app activation does not need Automation permission"
 for path in app.rglob('*'):
     if path.is_file():
         assert b'/Users/' not in path.read_bytes(), 'Local build paths must not be published: ' + str(path.relative_to(app))
@@ -32,9 +34,14 @@ PY
 [[ "$(lipo -archs "$app/Contents/PlugIns/DynamicAgentsWidgets.appex/Contents/MacOS/DynamicAgentsWidgets")" == "arm64" ]]
 codesign --verify --deep --strict "$app"
 mkdir -p dist/releases
-archive="DynamicAgents-$APP_VERSION-arm64.zip"
+archive="DynamicAgents-$APP_VERSION-arm64.dmg"
 if [[ -e "dist/releases/$archive" ]]; then trash "dist/releases/$archive"; fi
-ditto -c -k --sequesterRsrc --keepParent "$app" "dist/releases/$archive"
+staging="$(mktemp -d "$PWD/dist/releases/.dmg-stage.XXXXXX")"
+trap 'trash "$staging"' EXIT
+ditto "$app" "$staging/DynamicAgents.app"
+ln -s /Applications "$staging/Applications"
+hdiutil create -volname 'Dynamic Agents' -srcfolder "$staging" -format UDZO "dist/releases/$archive"
+hdiutil verify "dist/releases/$archive"
 (cd dist/releases && shasum -a 256 "$archive" > "$archive.sha256")
 python3 - "$app" "dist/releases/$archive.manifest.json" <<'PY'
 import json
@@ -54,7 +61,7 @@ manifest = {
     'sourceDirty': bool(subprocess.check_output(['git', 'status', '--porcelain'], text=True).strip()),
     'architecture': 'arm64', 'minimumMacOS': info['LSMinimumSystemVersion'],
     'sdk': info.get('DTSDKName', 'unknown'),
-    'builtLocally': True, 'signing': 'ad-hoc', 'notarized': False,
+    'builtLocally': True, 'signing': 'ad-hoc', 'notarized': False, 'format': 'dmg',
 }
 Path(sys.argv[2]).write_text(json.dumps(manifest, indent=2) + '\n')
 PY

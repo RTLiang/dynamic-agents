@@ -4,22 +4,22 @@ import Foundation
 import OSLog
 
 struct FocusAgentIntent: AppIntent {
-    static let title: LocalizedStringResource = "Open Agent"
+    static let title: LocalizedStringResource = "Open App"
     static let supportedModes: IntentModes = .background
     static let allowedExecutionTargets: IntentExecutionTargets = .widgetKitExtension
     static let isDiscoverable = false
 
-    @Parameter(title: "Pane") var paneID: String
+    @Parameter(title: "Session") var agentID: String
     @Parameter(title: "Language") var languageIdentifier: String?
     init() { }
-    init(paneID: String, languageIdentifier: String? = nil) {
-        self.paneID = paneID
+    init(agentID: String, languageIdentifier: String? = nil) {
+        self.agentID = agentID
         self.languageIdentifier = languageIdentifier
     }
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        try await WidgetAgentHandoff.focus(paneID, locale: languageIdentifier.map { Locale(identifier: $0) })
+        try await WidgetAgentHandoff.focus(agentID, locale: languageIdentifier.map { Locale(identifier: $0) })
         return .result()
     }
 }

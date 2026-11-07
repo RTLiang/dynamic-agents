@@ -2,117 +2,77 @@
 set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 helpers="$root/.cursor/skills/verify-dynamic-agents/helpers"
-action="${1:-}"
-run="${2:-}"
-if [[ ! "$run" =~ ^[a-z0-9]{1,32}$ ]]; then
-  echo 'Usage: control <launch|doctor|snapshot|duration|integrations|desktop-hooks|desktop-memory|menu|press|set|type|cleanup> <lowercase-alphanumeric-run-id> [arguments]' >&2
-  exit 2
-fi
+action="${1:-}"; run="${2:-}"
+[[ "$run" =~ ^[a-z0-9]{1,32}$ ]] || { echo 'Use control <launch|doctor|snapshot|hooks|settings|menu|press|cleanup> <owned-run-id>' >&2; exit 2; }
 scratch="$root/.build/verify-dynamic-agents/$run"
 evidence="$root/.build/verify-dynamic-agents-evidence/$run"
 app="$scratch/DynamicAgents.app"
+host="$scratch/Host.app"
 bundle="dev.local.dynamicagents.verify$run"
-socket_path="/tmp/dav-$run.sock"
 mkdir -p "$root/.build/verify-dynamic-agents" "$root/.build/verify-dynamic-agents-evidence"
-process_matches() {
-  local pid="${1:-}"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  [[ "$(ps -p "$pid" -o comm= 2>/dev/null || true)" == "$app/Contents/MacOS/DynamicAgents" ]]
-}
 cleanup() {
-  if [[ -L "$scratch" ]]; then echo 'Refusing a symlinked scratch directory.' >&2; return 1; fi
-  if [[ ! -d "$scratch" ]]; then echo "No verification instance; evidence retained at $evidence"; return; fi
-  if [[ ! -f "$scratch/bundle-id" || "$(<"$scratch/bundle-id")" != "$bundle" ]]; then
-    echo 'Scratch ownership marker missing; refusing cleanup.' >&2; return 1
-  fi
-  if [[ -f "$scratch/pid" ]]; then
-    local pid
-    pid="$(<"$scratch/pid")"
-    if process_matches "$pid"; then
-      kill -TERM "$pid"
-      for _ in $(seq 1 50); do process_matches "$pid" || break; sleep 0.1; done
-      if process_matches "$pid"; then echo 'Verification process did not exit; scratch retained.' >&2; return 1; fi
-    elif kill -0 "$pid" 2>/dev/null; then
-      echo 'Recorded PID belongs to another process; scratch retained.' >&2; return 1
-    fi
-  fi
-  if [[ -f "$scratch/server-pid" ]]; then
-    local server_pid server_command
-    server_pid="$(<"$scratch/server-pid")"
-    server_command="$(ps -p "$server_pid" -o command= 2>/dev/null || true)"
-    if [[ "$server_command" == *"$helpers/integration-fixture $socket_path $evidence"* ]]; then
-      kill -TERM "$server_pid"
-      for _ in $(seq 1 30); do kill -0 "$server_pid" 2>/dev/null || break; sleep 0.1; done
-      if kill -0 "$server_pid" 2>/dev/null; then echo 'Fixture server did not exit.' >&2; return 1; fi
-    elif kill -0 "$server_pid" 2>/dev/null; then
-      echo 'Recorded fixture PID was reused; refusing cleanup.' >&2; return 1
-    fi
-  fi
-  if [[ -f "$scratch/socket-created" && -S "$socket_path" ]]; then trash "$socket_path"; fi
+  [[ ! -L "$scratch" ]] || { echo 'Refusing symlinked scratch' >&2; return 1; }
+  [[ -d "$scratch" ]] || return 0
+  [[ -f "$scratch/bundle-id" && "$(<"$scratch/bundle-id")" == "$bundle" ]] || { echo 'Ownership mismatch' >&2; return 1; }
+  for kind in pid host-pid; do
+    [[ -f "$scratch/$kind" ]] || continue
+    local recorded expected current
+    recorded="$(<"$scratch/$kind")"
+    expected="$app/Contents/MacOS/DynamicAgents"
+    [[ "$kind" != host-pid ]] || expected="$host/Contents/MacOS/Host"
+    current="$(ps -p "$recorded" -o comm= 2>/dev/null || true)"
+    if [[ "$current" == "$expected" ]]; then
+      kill -TERM "$recorded"
+      for _ in $(seq 1 40); do [[ "$(ps -p "$recorded" -o comm= 2>/dev/null || true)" == "$expected" ]] || break; sleep 0.1; done
+      [[ "$(ps -p "$recorded" -o comm= 2>/dev/null || true)" != "$expected" ]] || { echo 'Owned process did not stop' >&2; return 1; }
+    elif kill -0 "$recorded" 2>/dev/null; then echo 'PID reused; refusing cleanup' >&2; return 1; fi
+  done
+  [[ ! -f "$scratch/host-state.json" ]] || cp "$scratch/host-state.json" "$evidence/host-final.json"
   defaults delete "$bundle" >/dev/null 2>&1 || true
-  if [[ -d "$scratch" ]]; then command -v trash >/dev/null; trash "$scratch"; fi
-  echo "Cleaned verification instance; evidence retained at $evidence"
+  defaults delete "$bundle.host" >/dev/null 2>&1 || true
+  trash "$scratch"
+  echo "Cleaned owned apps; evidence retained: $evidence"
 }
 case "$action" in
-  launch)
-    [[ ! -e "$scratch" && ! -e "$evidence" && ! -e "$socket_path" ]] || { echo 'Run ID already exists; choose another.' >&2; exit 1; }
-    if defaults read "$bundle" >/dev/null 2>&1; then echo 'Preferences domain already exists; choose another run ID.' >&2; exit 1; fi
-    mkdir -p "$scratch" "$evidence"
-    printf '%s\n' "$bundle" > "$scratch/bundle-id"
-    trap 'code=$?; if [[ $code -ne 0 ]]; then cleanup >&2 || true; fi' EXIT
-    swift build --build-system native -c debug -j 4 > "$evidence/build.log" 2>&1
-    bin="$(swift build --build-system native -c debug --show-bin-path 2>> "$evidence/build.log")"
-    mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-    cp "$bin/DynamicAgents" "$app/Contents/MacOS/DynamicAgents"
-    cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
-    ditto "$bin/DynamicAgents_AgentCore.bundle" "$app/Contents/Resources/DynamicAgents_AgentCore.bundle"
-    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle" "$app/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivities false' "$app/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 15.0' "$app/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$app/Contents/Info.plist"
-    codesign --force --sign - "$app" > "$evidence/codesign.log" 2>&1
-    swiftc "$helpers/ax.swift" -o "$scratch/ax" > "$evidence/ax-build.log" 2>&1
-    "$helpers/integration-fixture" "$socket_path" "$evidence" > "$evidence/fixture-server.log" 2>&1 &
-    echo "$!" > "$scratch/server-pid"
-    for _ in $(seq 1 30); do [[ -S "$socket_path" ]] && break; sleep 0.1; done
-    [[ -S "$socket_path" ]] || { echo 'Fixture socket did not start.' >&2; exit 1; }
-    touch "$scratch/socket-created"
-    DYNAMIC_AGENTS_DATA_DIR="$scratch/desktop-data" DYNAMIC_AGENTS_CONFIG_HOME="$scratch/config" VERIFY_HERDR_SOCKET="$socket_path" VERIFY_HERDR_TRACE="$evidence/herdr-commands.log" HERDR_BIN="$helpers/herdr-fixture" \
-      swift "$helpers/launch.swift" "$app" > "$scratch/pid" 2> "$evidence/app-launch.log"
-    [[ "$(<"$scratch/pid")" =~ ^[0-9]+$ ]] || { echo 'App launch returned no PID.' >&2; exit 1; }
-    "$0" doctor "$run" | tee "$evidence/doctor.txt"
-    echo "Evidence: $evidence"
-    ;;
-  doctor|snapshot|duration|integrations|desktop-hooks|desktop-memory|menu|press|set|type)
-    [[ -f "$scratch/pid" && -x "$scratch/ax" ]] || { echo 'Run was not launched.' >&2; exit 1; }
-    pid="$(<"$scratch/pid")"
-    process_matches "$pid" || { echo 'The recorded verification process is not running.' >&2; exit 1; }
-    case "$action" in
-      doctor)
-        "$scratch/ax" "$pid" "$bundle" doctor
-        "$helpers/hook-doctor" "$app" --data-dir "$scratch/desktop-data"
-        ;;
-      desktop-hooks|desktop-memory)
-        "$scratch/ax" "$pid" "$bundle" "$action" "$run" "$evidence"
-        "$helpers/hook-doctor" "$app" --data-dir "$scratch/desktop-data" > "$evidence/hook-consistency-after.json"
-        python3 - "$scratch" "$evidence" <<'PY'
-import json
+ launch)
+  [[ ! -e "$scratch" && ! -e "$evidence" ]] || { echo 'Choose a fresh run ID' >&2; exit 1; }
+  language="${VERIFY_LANGUAGE:-en}"
+  [[ "$language" == en || "$language" == zh-Hans ]] || exit 2
+  mkdir -p "$scratch" "$evidence"
+  printf '%s\n' "$bundle" > "$scratch/bundle-id"
+  printf '%s\n' "$language" > "$scratch/language"
+  trap 'status=$?; if [[ $status != 0 ]]; then cleanup >&2; fi' EXIT
+  swift build --build-system native -c debug -j 4 > "$evidence/build.log" 2>&1
+  bin="$(swift build --build-system native -c debug --show-bin-path)"
+  mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$host/Contents/MacOS"
+  cp "$bin/DynamicAgents" "$app/Contents/MacOS/DynamicAgents"
+  cp "$root/Resources/Info.plist" "$app/Contents/Info.plist"
+  ditto "$bin/DynamicAgents_AgentCore.bundle" "$app/Contents/Resources/DynamicAgents_AgentCore.bundle"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $bundle" "$app/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivities false' "$app/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 15.0' "$app/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$app/Contents/Info.plist"
+  swiftc -parse-as-library "$helpers/host.swift" -o "$host/Contents/MacOS/Host" > "$evidence/host-build.log" 2>&1
+  python3 - "$host/Contents/Info.plist" "$bundle.host" <<'PY'
+import plistlib,sys
 from pathlib import Path
-import sys
-scratch, evidence = map(Path, sys.argv[1:])
-flags = json.loads((scratch / "desktop-data/sources.json").read_bytes())
-configs = {str(path.relative_to(scratch / "config")): json.loads(path.read_bytes())
-           for path in (scratch / "config").rglob("*.json")}
-result = {"sources": flags, "configs": configs, "passed": bool(flags) and all(value is False for value in flags.values())}
-(evidence / "desktop-config-after.json").write_text(json.dumps(result, indent=2) + "\n")
-if not result["passed"]:
-    sys.exit("FAIL: a desktop source remained enabled after UI removal")
-print("result: owned client configurations archived; all installed sources disabled after removal")
+Path(sys.argv[1]).write_bytes(plistlib.dumps({'CFBundleIdentifier':sys.argv[2],'CFBundleExecutable':'Host','CFBundleName':'Verification Host','CFBundlePackageType':'APPL','LSUIElement':False}))
 PY
-        ;;
-      *) "$scratch/ax" "$pid" "$bundle" "$action" "${@:3}" ;;
-    esac
-    ;;
-  cleanup) cleanup ;;
-  *) echo 'Unknown action.' >&2; exit 2 ;;
+  codesign --force --sign - "$host" > "$evidence/codesign.log" 2>&1
+  codesign --force --sign - "$app" >> "$evidence/codesign.log" 2>&1
+  swiftc "$helpers/ax.swift" -o "$scratch/ax" > "$evidence/ax-build.log" 2>&1
+  export DYNAMIC_AGENTS_DATA_DIR="$scratch/desktop-data" DYNAMIC_AGENTS_CONFIG_HOME="$scratch/config" VERIFY_LANGUAGE="$language"
+  swift "$helpers/launch.swift" "$host" "$scratch" > "$scratch/host-pid" 2> "$evidence/host-launch.log"
+  swift "$helpers/launch.swift" "$app" > "$scratch/pid" 2> "$evidence/app-launch.log"
+  "$0" doctor "$run" | tee "$evidence/doctor.txt"
+  ;;
+ doctor|snapshot|hooks|settings|menu|press)
+  [[ -f "$scratch/pid" && -x "$scratch/ax" ]] || { echo 'Launch an owned run first' >&2; exit 1; }
+  pid="$(<"$scratch/pid")"
+  [[ "$(ps -p "$pid" -o comm= 2>/dev/null || true)" == "$app/Contents/MacOS/DynamicAgents" ]] || { echo 'Owned app not running' >&2; exit 1; }
+  "$scratch/ax" "$pid" "$bundle" "$action" "$(<"$scratch/language")" "$scratch" "$evidence" "${@:3}"
+  if [[ "$action" == doctor || "$action" == hooks ]]; then "$helpers/hook-doctor" "$app" --data-dir "$scratch/desktop-data"; fi
+  ;;
+ cleanup) cleanup ;;
+ *) echo 'Unknown action' >&2; exit 2 ;;
 esac

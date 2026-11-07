@@ -20,7 +20,7 @@ struct DynamicAgentsApp: App {
                 .task { await updates.check(manual: false) }
                 .onOpenURL { url in
                     guard url.scheme == "dynamicagents", url.host == "agent",
-                          let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "pane" })?.value else { return }
+                          let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "session" })?.value else { return }
                     Task {
                         await store.refresh()
                         if let agent = store.agents.first(where: { $0.id == id }) { await store.focus(agent) }
@@ -56,7 +56,7 @@ struct AgentMenu: View {
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
 
     var body: some View {
-        Text(store.loading ? L10n.text("Connecting…") : store.state.headline)
+        Text(store.loading ? L10n.text("Loading sessions…") : store.state.headline)
         Divider()
         ForEach(AgentStatus.allCases.sorted { $0.priority < $1.priority }, id: \.self) { status in
             let agents = store.agents.filter { $0.status == status }
@@ -76,8 +76,6 @@ struct AgentMenu: View {
         }
         if let error = store.actionError { Text(error) }
         Divider()
-        Button(L10n.text("Open Terminal")) { Task { await store.openTerminal() } }
-            .disabled(!store.herdrConnected)
         Button(L10n.text("Open Dynamic Agents")) {
             openWindow(id: "dashboard")
             NSApp.activate(ignoringOtherApps: true)
@@ -118,11 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if NATIVE_LIVE_ACTIVITIES
         handoff = ActivityHandoffReceiver()
         #endif
-        if !args.contains("--verify-live-activity"), !args.contains("--verify-terminal") { store?.start() }
-        if let index = args.firstIndex(of: "--verify-terminal"), args.indices.contains(index + 1) {
-            let reportURL = URL(fileURLWithPath: args[index + 1])
-            Task { await TerminalVerification.run(reportURL: reportURL) }
-        }
+        if !args.contains("--verify-live-activity") { store?.start() }
         let center = NSWorkspace.shared.notificationCenter
         center.addObserver(self, selector: #selector(sleeping), name: NSWorkspace.willSleepNotification, object: nil)
         center.addObserver(self, selector: #selector(waking), name: NSWorkspace.didWakeNotification, object: nil)

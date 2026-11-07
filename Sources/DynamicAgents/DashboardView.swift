@@ -12,15 +12,13 @@ struct DashboardView: View {
     @State private var showingSettings = false
 
     private var visibleAgents: [AgentTableItem] {
-        store.agents.map { AgentTableItem(agent: $0, project: store.workspaceName($0.workspaceID)) }
+        store.agents.map { AgentTableItem(agent: $0, project: $0.projectName) }
             .filter {
                 (filter == nil || $0.agent.status == filter) &&
                 (search.isEmpty || "\($0.title) \($0.project) \($0.kind)".localizedCaseInsensitiveContains(search))
             }
             .sorted(using: sortOrder)
     }
-
-    private var selectedIsHookSession: Bool { store.agents.first { $0.id == selection }?.isHookSession == true }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,7 +39,7 @@ struct DashboardView: View {
             .tableStyle(.inset(alternatesRowBackgrounds: true))
             .accessibilityIdentifier("agents-table")
             .contextMenu(forSelectionType: String.self) { ids in
-                Button(L10n.text("Open Agent")) { openAgent(ids.first) }
+                Button(L10n.text("Open App")) { openAgent(ids.first) }
                     .disabled(ids.isEmpty || !store.connected || store.focusingID != nil)
             } primaryAction: { ids in
                 openAgent(ids.first)
@@ -56,16 +54,16 @@ struct DashboardView: View {
                     ContentUnavailableView(
                         store.loading ? L10n.text("Connecting…") : search.isEmpty && filter == nil ? L10n.text("No Agents") : L10n.text("No Matching Agents"),
                         systemImage: "list.bullet",
-                        description: Text(store.loading ? "" : store.connected ? L10n.text("Start an agent in herdr or adjust the filters.") : L10n.text("Make sure herdr is running."))
+                        description: Text(store.loading ? "" : L10n.text("Install an agent hook in Settings, then start a coding turn."))
                     )
                 }
             }
-            if let error = store.connectionError ?? store.liveActivity.message {
+            if let error = store.liveActivity.message {
                 Divider()
                 HStack {
                     Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     Spacer()
-                    Button(L10n.text("Connection Settings…")) { showingSettings = true }
+                    Button(L10n.text("Settings…")) { showingSettings = true }
                 }.padding(10)
             }
             Divider()
@@ -73,7 +71,7 @@ struct DashboardView: View {
                 Text(L10n.format("agent.count", Int64(visibleAgents.count)))
                 if !store.connected { Text(L10n.text("· Status may be out of date")) }
                 Spacer()
-                Text(store.herdrConnected ? L10n.text("herdr connected") : store.connected ? L10n.text("Desktop hooks active") : L10n.text("herdr disconnected"))
+                Text(store.connected ? L10n.text("Monitoring hooks") : L10n.text("Monitoring paused"))
             }
             .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 8)
         }
@@ -89,12 +87,11 @@ struct DashboardView: View {
                 }.pickerStyle(.menu)
             }
             ToolbarItem {
-                Button(selectedIsHookSession ? L10n.text("Open Agent") : L10n.text("Open Terminal"), systemImage: selectedIsHookSession ? "arrow.up.forward.app" : "terminal") {
-                    if let selection { openAgent(selection) }
-                    else { Task { await store.openTerminal() } }
+                Button(L10n.text("Open App"), systemImage: "arrow.up.forward.app") {
+                    openAgent(selection)
                 }
-                .disabled(store.focusingID != nil || (selection == nil ? !store.herdrConnected : !store.connected))
-                .help(selectedIsHookSession ? L10n.text("Open Agent") : selection == nil ? L10n.text("Open the connected terminal") : L10n.text("Open the selected agent in Terminal"))
+                .disabled(store.focusingID != nil || selection == nil || !store.connected)
+                .help(L10n.text("Activate the selected session's host app"))
                 .keyboardShortcut(.return, modifiers: .command)
             }
             ToolbarItem {
@@ -106,7 +103,7 @@ struct DashboardView: View {
                     get: { store.liveActivity.isEnabled },
                     set: { enabled in
                         Task {
-                            if enabled { await store.liveActivity.start(state: store.activityState, session: store.session) }
+                            if enabled { await store.liveActivity.start(state: store.activityState) }
                             else { await store.liveActivity.stop() }
                         }
                     }
@@ -116,15 +113,15 @@ struct DashboardView: View {
                 .help(store.liveActivity.isEnabled ? L10n.text("Turn off Live Activity") : L10n.text("Show running or recently completed sessions"))
             }
             ToolbarItem {
-                Button(L10n.text("Connection Settings"), systemImage: "gearshape") { showingSettings = true }
-                    .help(L10n.text("Connection Settings"))
+                Button(L10n.text("Settings"), systemImage: "gearshape") { showingSettings = true }
+                    .help(L10n.text("Settings"))
                     .keyboardShortcut(",", modifiers: .command)
             }
         }
         .onChange(of: visibleAgents.map(\.id)) { _, ids in
             if let selection, !ids.contains(selection) { self.selection = nil }
         }
-        .sheet(isPresented: $showingSettings) { ConnectionSettings(store: store) }
+        .sheet(isPresented: $showingSettings) { SettingsView(store: store) }
         .alert(L10n.text("Action Failed"), isPresented: Binding(get: { store.presentsActionError && store.actionError != nil }, set: { if !$0 { store.actionError = nil } })) {
             Button(L10n.text("OK")) { store.actionError = nil }
         } message: { Text(store.actionError ?? "") }

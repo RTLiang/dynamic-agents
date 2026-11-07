@@ -38,7 +38,7 @@ public struct AppRelease: Equatable, Sendable {
         guard !release.draft, !release.prerelease, let version = ReleaseVersion(release.tag_name) else { return nil }
         let root = "https://github.com/" + repository + "/releases/"
         guard release.html_url.absoluteString == root + "tag/" + release.tag_name else { return nil }
-        let filename = "DynamicAgents-\(version)-arm64.zip"
+        let filename = "DynamicAgents-\(version)-arm64.dmg"
         guard let asset = release.assets.first(where: { $0.name == filename }),
               asset.browser_download_url.absoluteString == root + "download/" + release.tag_name + "/" + filename else { return nil }
         return Self(version: version, pageURL: release.html_url, downloadURL: asset.browser_download_url)
@@ -52,10 +52,10 @@ public struct AppRelease: Equatable, Sendable {
         request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
         request.setValue("DynamicAgents", forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else { throw HerdrError.message(L10n.text("Invalid update response.")) }
+        guard let http = response as? HTTPURLResponse else { throw AgentError.message(L10n.text("Invalid update response.")) }
         if http.statusCode == 404 { return nil }
         guard http.statusCode == 200, data.count <= 2_097_152 else {
-            throw HerdrError.message(L10n.format("Update service returned HTTP %lld.", Int64(http.statusCode)))
+            throw AgentError.message(L10n.format("Update service returned HTTP %lld.", Int64(http.statusCode)))
         }
         return try decode(data)
     }

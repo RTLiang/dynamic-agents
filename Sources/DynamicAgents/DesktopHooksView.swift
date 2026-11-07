@@ -3,38 +3,6 @@ import SwiftUI
 import AgentCore
 #endif
 
-struct IntegrationManagementView: View {
-    let client: HerdrClient
-    @State private var desktopSelected = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Picker(L10n.text("Agent Integrations"), selection: $desktopSelected) {
-                Text("herdr").tag(false)
-                Text(L10n.text("Desktop Clients")).tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(width: 360)
-            .padding(.vertical, 12)
-            .accessibilityIdentifier("integration-source-picker")
-            Divider()
-            ZStack {
-                AgentIntegrationsView(client: client)
-                    .opacity(desktopSelected ? 0 : 1)
-                    .allowsHitTesting(!desktopSelected)
-                    .disabled(desktopSelected)
-                    .accessibilityHidden(desktopSelected)
-                DesktopHooksView()
-                    .opacity(desktopSelected ? 1 : 0)
-                    .allowsHitTesting(desktopSelected)
-                    .disabled(!desktopSelected)
-                    .accessibilityHidden(!desktopSelected)
-            }
-        }
-    }
-}
-
 struct DesktopHooksView: View {
     @State private var installations: [DesktopHookSource: DesktopHookInstallation] = [:]
     @State private var changing: DesktopHookSource?
@@ -44,8 +12,8 @@ struct DesktopHooksView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.text("Desktop Clients")).font(.headline)
-            Text(L10n.text("Receive local lifecycle hooks from desktop coding agents and IDEs, including sessions outside herdr. Normal chat windows are not tracked."))
+            Text(L10n.text("Agent Hooks")).font(.headline)
+            Text(L10n.text("Receive lifecycle events directly from coding agents. Normal chat windows are not tracked."))
                 .foregroundStyle(.secondary)
             List(DesktopHookSource.allCases) { source in
                 HStack {
@@ -75,7 +43,7 @@ struct DesktopHooksView: View {
             if let notice { Text(notice).foregroundStyle(.secondary) }
             Text(L10n.text("Restart the client after installation. Codex requires reviewing and trusting the hooks in Settings > Hooks. Managed policies and remote runtimes may prevent local reporting."))
                 .font(.caption).foregroundStyle(.secondary)
-            Text(L10n.text("Desktop actions open the host app; selecting an exact conversation is not supported."))
+            Text(L10n.text("Actions activate the host app. Windows, tabs and conversations are not selected."))
                 .font(.caption).foregroundStyle(.secondary)
             Button(L10n.text("Refresh")) { Task { await refresh() } }
                 .disabled(loading || changing != nil)

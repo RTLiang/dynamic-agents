@@ -25,12 +25,20 @@ try:
     if len(bundled) != 1:
         raise ValueError("Expected exactly one bundled desktop hook resource")
     bundled_bytes = bundled[0].read_bytes()
+    pi_bundle = bundled[0].with_name("pi-hook.ts")
+    pi_expected = expected.with_name("pi-hook.ts")
+    if not pi_bundle.is_file() or pi_bundle.is_symlink():
+        raise ValueError("Bundled Pi lifecycle resource is missing")
     installed = args.data_dir / "desktop-hook.py"
     if installed.is_symlink():
         raise ValueError("Installed helper is a symlink")
     installed_bytes = installed.read_bytes() if installed.exists() else None
-    matches_checkout = bundled_bytes == expected.read_bytes()
-    matches_installed = installed_bytes is None or installed_bytes == bundled_bytes
+    matches_checkout = bundled_bytes == expected.read_bytes() and pi_bundle.read_bytes() == pi_expected.read_bytes()
+    pi_installed = args.data_dir / "pi-hook.ts"
+    if pi_installed.is_symlink():
+        raise ValueError("Installed Pi helper is a symlink")
+    pi_current = not pi_installed.exists() or pi_installed.read_bytes() == pi_bundle.read_bytes()
+    matches_installed = (installed_bytes is None or installed_bytes == bundled_bytes) and pi_current
     result = {
         "bundleID": info.get("CFBundleIdentifier"),
         "version": info.get("CFBundleShortVersionString"),

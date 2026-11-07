@@ -27,7 +27,6 @@ if helper.is_symlink() or helper.read_bytes() != expected.read_bytes():
 
 environment = dict(os.environ, DYNAMIC_AGENTS_DATA_DIR=str(data),
                    DYNAMIC_AGENTS_CONFIG_HOME=str(config))
-environment.pop("HERDR_ENV", None)
 sessions = [
     ("00000000-0000-4000-8000-000000000001", "Memory project example", "vscode", "user"),
     ("00000000-0000-4000-8000-000000000002", "Background memory example", {"internal": "memory_consolidation"}, "background"),

@@ -9,18 +9,18 @@ enum AgentFocusAction {
         let store = AgentStore.shared
         await store.refresh()
         guard store.connected else {
-            throw HerdrError.message(store.connectionError ?? L10n.text("Unable to connect to herdr. Try again."))
+            throw AgentError.message(L10n.text("Hook monitoring unavailable"))
         }
         guard store.focusingID == nil else {
-            throw HerdrError.message(L10n.text("Switching terminals. Try again shortly."))
+            throw AgentError.message(L10n.text("Opening an app. Try again shortly."))
         }
         guard let agent = store.agents.first(where: { $0.id == agentID }) else {
-            throw HerdrError.message(L10n.text("This agent has ended. Refresh the Live Activity."))
+            throw AgentError.message(L10n.text("This agent has ended. Refresh the Live Activity."))
         }
         await store.focus(agent, presentsError: false)
         if let error = store.actionError {
             logger.error("Agent action failed: \(error, privacy: .private)")
-            throw HerdrError.message(error)
+            throw AgentError.message(error)
         }
         logger.notice("Agent action completed")
     }

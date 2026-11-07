@@ -54,7 +54,7 @@ public enum AgentHandoff {
         var components = URLComponents()
         components.scheme = scheme
         components.host = "agent"
-        components.queryItems = [URLQueryItem(name: "pane", value: agentID)]
+        components.queryItems = [URLQueryItem(name: "session", value: agentID)]
         return components.url!
     }
 
@@ -65,8 +65,8 @@ public enum AgentHandoff {
               components.user == nil, components.password == nil, components.port == nil,
               components.path.isEmpty, components.fragment == nil,
               let query = components.queryItems, query.count == 1,
-              query[0].name == "pane", let id = query[0].value,
-              !id.isEmpty, id.utf8.count <= 256,
+              query[0].name == "session", let id = query[0].value,
+              id.range(of: "^hook:[0-9a-f]{40}$", options: .regularExpression) != nil,
               !id.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) || CharacterSet.whitespacesAndNewlines.contains($0) }) else { return nil }
         return id
     }

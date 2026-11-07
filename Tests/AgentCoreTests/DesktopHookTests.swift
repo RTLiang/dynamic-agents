@@ -12,10 +12,10 @@ private func hookEvent(status: String, source: String = "codex", age: TimeInterv
 }
 
 @Test func desktopEventUsesObservedHostAndNeverTreatsOpenAppAsTaskActivity() throws {
-    let app = TerminalApplication(pid: 50, bundleID: "example.desktop", name: "Example Desktop", path: "/Applications/Example.app")
+    let app = HostApplication(pid: 50, bundleID: "example.desktop", name: "Example Desktop", path: "/Applications/Example.app")
     let event = try hookEvent(status: "working")
     let agent = try #require(event.agent(applications: [app], now: .now, processes: hookProcesses))
-    #expect(agent.isHookSession && agent.status == .working)
+    #expect(agent.isSessionAvailable && agent.status == .working)
     #expect(agent.hostBundleID == "example.desktop")
     #expect(agent.id.hasPrefix("hook:") && agent.kind == "codex")
     #expect(event.agent(applications: [], now: .now)?.status == .unknown)
@@ -24,11 +24,10 @@ private func hookEvent(status: String, source: String = "codex", age: TimeInterv
 
 @Test func desktopReportedCompletionTimeSurvivesFirstReadAndDurationChanges() throws {
     let done = try #require(hookEvent(status: "done", age: 300).agent(applications: [], now: .now))
-    var feed = AgentActivityFeed()
-    feed.observe([done], at: .now)
+    let feed = AgentActivityFeed()
     #expect(feed.agents(from: [done], at: .now, completionLifetime: 600).count == 1)
     #expect(feed.agents(from: [done], at: .now, completionLifetime: 120).isEmpty)
-    #expect(done.hookCompletedAt != nil && done.completionSequence == 1234)
+    #expect(done.completedAt != nil)
 }
 
 @Test func desktopEndedExpiredFutureAndUnknownSourcesDoNotBecomeLiveSessions() throws {
@@ -38,13 +37,9 @@ private func hookEvent(status: String, source: String = "codex", age: TimeInterv
     #expect(try hookEvent(status: "working", source: "unrelated-chat").agent(applications: [], now: .now) == nil)
 }
 
-@Test func desktopEventsDoNotChangeHerdrAgentIdentityOrDecodeDefaults() throws {
-    let data = Data("{\"pane_id\":\"w1:p1\",\"workspace_id\":\"w1\",\"agent\":\"codex\",\"agent_status\":\"working\"}".utf8)
-    let agent = try JSONDecoder().decode(Agent.self, from: data)
-    #expect(!agent.isHookSession && agent.hostBundleID == nil && agent.hookCompletedAt == nil)
-    #expect(agent.withStatus(.done).id == "w1:p1")
+@Test func hookIdentityAndStatusAreCarriedToTheActivityPayload() throws {
     let event = try #require(hookEvent(status: "done").agent(applications: [], now: .now))
-    let payload = AgentActivityState(agents: [event], workspaces: [])
+    let payload = AgentActivityState(agents: [event])
     #expect(payload.items.first?.id == event.id)
     #expect(payload.items.first?.status == .done)
     #expect(try JSONEncoder().encode(payload).count < 4096)

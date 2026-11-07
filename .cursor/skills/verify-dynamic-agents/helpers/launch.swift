@@ -4,7 +4,8 @@ import Foundation
 let configuration = NSWorkspace.OpenConfiguration()
 configuration.activates = true
 configuration.createsNewApplicationInstance = true
-configuration.arguments = ["-AppleLanguages", "(en)", "-automaticallyCheckForUpdates", "NO"]
+let language = ProcessInfo.processInfo.environment["VERIFY_LANGUAGE"] == "zh-Hans" ? "zh-Hans" : "en"
+configuration.arguments = Array(CommandLine.arguments.dropFirst(2)) + ["-AppleLanguages", "(\(language))", "-automaticallyCheckForUpdates", "NO"]
 configuration.environment = ProcessInfo.processInfo.environment
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
 Task { @MainActor in

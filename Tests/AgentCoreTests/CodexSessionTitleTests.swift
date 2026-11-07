@@ -87,10 +87,10 @@ private func fixture(_ body: (URL) async throws -> Void) async throws {
     let titled = try #require(titledEvent.agent(applications: [], now: .now))
     #expect(titled.title == "Fix settings layout")
     #expect(titled.id == original.id && titled.status == original.status)
-    #expect(titled.hookCompletedAt == original.hookCompletedAt)
+    #expect(titled.completedAt == original.completedAt)
     #expect(titled.projectName == "Example")
     #expect(event.withTitle("\n ").agent(applications: [], now: .now)?.title == original.title)
     #expect(SessionTitle.normalized(String(repeating: "字", count: 500))?.count == 240)
-    let activity = AgentActivityState(agents: [titled], workspaces: [])
+    let activity = AgentActivityState(agents: [titled])
     #expect(activity.items.first?.title == "Fix settings layout")
 }

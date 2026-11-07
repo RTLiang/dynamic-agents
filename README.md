@@ -2,84 +2,58 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-Keep an eye on your coding agents without watching every terminal.
+Follow your coding agents from a native Mac dashboard and system Live Activity.
 
-Dynamic Agents is a native Mac app that shows which coding conversations are running, waiting for you, or ready to review. A system Live Activity lets you return to a session from the menu bar area.
+**[Download the latest DMG](https://github.com/RTLiang/dynamic-agents/releases/latest)**
 
-**[Download the latest release](https://github.com/RTLiang/dynamic-agents/releases/latest)**
+Dynamic Agents receives lifecycle events from **Pi, Claude Code, Codex App / CLI, Cursor and VS Code Copilot**. It shows which sessions are running, waiting for input, or recently completed. Clicking a session activates its host App.
 
-## Requirements
+## Requirements and installation
 
-- An Apple silicon Mac running **macOS 27.3 or later** for the app with Live Activities.
-- [herdr](https://herdr.dev/) for sessions running inside herdr.
-- Python 3 and a supported client's lifecycle hooks for desktop sessions outside herdr. You can use this mode without running herdr.
+- Apple silicon, **macOS 27.3+**, and Python 3.
+- A supported agent with lifecycle hooks enabled. Pi requires the extension API with the agent_settled event. Vendor versions, policies and hook trust determine event delivery.
 
-Desktop adapters support Claude Code, Codex App / CLI, Cursor Agent, and VS Code's shared Copilot runtime. Client versions, organization policies, and hook trust settings determine whether events are delivered. Ordinary chat windows are not monitored.
+1. Download the DMG, open it, and drag **DynamicAgents.app** onto **Applications**. Eject the disk image and launch the installed app.
+2. If macOS blocks first launch, use **System Settings → Privacy & Security → Open Anyway** and confirm. Releases use the required local ad-hoc execution signature, without Developer ID signing or notarization.
+3. Open **Settings → Agent Hooks → Manage Agent Hooks**, then install the adapters you use. Restart the client or reload its extensions. In Pi use **/reload**; in Codex review and trust the new hook definitions.
+4. Start a coding turn so the agent sends its first event. Existing installations showing **Update Available** should update the shared helper from this release.
 
-## Install
+Hook installation preserves unrelated configuration and creates local backups. Install/remove applies immediately. App activation needs no Accessibility or Automation permission.
 
-1. Download the ZIP from the [Releases page](https://github.com/RTLiang/dynamic-agents/releases/latest), unzip it, and move **DynamicAgents.app** to **Applications**.
-2. Open the app. If macOS blocks it, open **System Settings → Privacy & Security**, find the message about Dynamic Agents, and choose **Open Anyway**, then confirm. Use the release's SHA-256 file if you want to check the download.
-3. When you use terminal navigation, enable **Dynamic Agents** in **Privacy & Security → Accessibility** and allow its Automation request for your terminal.
+## Session states
 
-Releases are built locally. They do not use an Apple Developer ID certificate or notarization. Apple silicon binaries retain the local ad-hoc signature required to run; this is not Apple verification. First-launch approval, Accessibility, and Automation are separate macOS controls.
+The default order is **Running → Needs Input → Completed → Idle → Unknown**. Search, filter or sort the table to find a session.
 
-## Start monitoring
-
-**Sessions inside herdr**
-
-Start herdr, run your coding agent inside it, then open Dynamic Agents. The app discovers local herdr clients automatically. Use the gear button to choose a session or a specific terminal window when you have more than one.
-
-**Desktop clients and sessions outside herdr**
-
-Open **Connection Settings → Agent Integrations → Manage Integrations → Desktop Clients**. Install the adapter you need, restart that client, and review its hook permissions. Codex requires trusting the hooks in its own hook settings. Existing client hooks are preserved.
-
-## Understand the list
-
-The default order is **Running → Needs Input → Completed → Idle**, followed by Unknown when a connection cannot be verified. You can search, filter by status, or sort the table yourself.
-
-| Status | What it means |
+| State | Meaning |
 | --- | --- |
-| **Running** | The agent is actively working on a turn. |
-| **Needs Input** | Work is paused for a permission, answer, or decision from you. |
-| **Completed** | A turn ended recently and its result is ready to review. This does not mean an entire project is finished or that every requested outcome succeeded. |
-| **Idle** | The coding session is still available, with no work running and no current completion reminder. A new or interrupted session can also be idle. |
-| **Unknown** | The app cannot currently verify the session's state. It is not counted as running. |
+| Running | The agent is processing a turn. |
+| Needs Input | Work is paused for your permission, answer or decision. |
+| Completed | A turn ended recently. This describes a turn boundary, not project completion or a guarantee of success. |
+| Idle | The session is available without active work or a current completion reminder. |
+| Unknown | Current work cannot be verified; it is not counted as running. |
 
-A completion reminder lasts **10 minutes by default**. Change **Show Completed For** in Connection Settings from **1 to 1440 minutes**. Viewing a result does not restart its timer. When the reminder expires, an available session becomes Idle; a closed desktop session disappears.
+Completion reminders last **10 minutes** by default. Change **Show Completed For** in Settings from **1–1440 minutes**. Viewing a result keeps the original timer. After expiry, available sessions become Idle and closed sessions disappear. Interrupted Pi runs become Idle; failed runs do not create a completion reminder. Codex internal memory, title and subagent maintenance are excluded when identified by structured session metadata.
 
-The app lists coding sessions and recent completions. Empty shell tabs, closed idle desktop sessions, ordinary chat, and internal work such as Codex memory consolidation or title generation do not belong in the list.
+## Open the host App
 
-## Return to your work
+Double-click a row, press Return on the selection, or click a session in the menu or Live Activity. Dynamic Agents activates the already running host App. Its existing window, tab and conversation selection stays with that App.
 
-Double-click a row, select it and press **Return**, or choose a session from the menu bar or Live Activity.
-
-For herdr, Dynamic Agents selects the existing page in your chosen terminal client. It keeps other clients on their current pages and does not create another window or tab. Supported terminals are **Ghostty 1.3+**, **iTerm2**, and **Apple Terminal**. Keep herdr's normal sidebar visible and mouse capture enabled for direct navigation; unsupported or ambiguous layouts produce an explanation rather than choosing another client.
-
-For general desktop clients, the app opens the observed host app. It cannot select an exact conversation inside every editor.
+The host is resolved from process ancestry. For detached CLI processes, a recognized App hint from the hook environment can identify the terminal App; it cannot identify a particular client inside a multiplexer. Ambiguous or unavailable hosts produce an error. A verified live CLI can still be monitored without a known host.
 
 ## Live Activities and language
 
-Live Activities show **running sessions and recent completions**. Idle sessions and sessions waiting for input stay in the dashboard and menu. When no eligible session remains, the activity hides while monitoring continues.
+Live Activities show **running sessions and recent completions**. Waiting and idle sessions remain in the dashboard and menu. With no eligible sessions, the activity hides and monitoring continues. Hiding the menu icon or closing the dashboard also keeps monitoring active.
 
-The app and Live Activity support **English and Simplified Chinese**. They follow your Mac's language or the language selected for Dynamic Agents in **System Settings → General → Language & Region → Applications**. Compact counts, expanded statuses, action hints, and accessibility text use that language. Your session titles and project names stay as you named them.
-
-You can hide the menu bar icon in settings without stopping monitoring. Closing the dashboard also keeps monitoring running. Reopen the app from the Dock to restore its window or icon.
-
-## If something does not appear or open
-
-- **No sessions:** check that herdr is running, or that the desktop adapter is installed and trusted. Start a new coding turn so the client sends an event.
-- **Wrong herdr window:** select the exact **Open With** app and **herdr Window** in Connection Settings. A closed selected window must be selected again; the app will not redirect you elsewhere.
-- **Navigation stopped after an update:** open Accessibility settings. If the existing Dynamic Agents entry is enabled but no longer works, remove that entry and add the current app from Applications again. Complete password or Touch ID prompts yourself.
-- **Hook says Update Available:** use the current app release to update the adapter. Keep the app and copied helper from the same version; an older app cannot tell that a separately replaced script is newer.
-- **Live Activity missing:** enable it in the app, allow it if macOS asks, and check that a session is running or recently completed.
+The app and Widget support **English and Simplified Chinese**, following the system or the app language chosen in **System Settings → General → Language & Region → Applications**. Session names and project names retain their original text.
 
 ## Privacy and updates
 
-Session status stays on your Mac. Desktop hooks store lifecycle metadata, a hashed session identifier, a project basename, and process ancestry. They do not save prompts, tool arguments, or transcripts. Codex source classification reads only a bounded session-metadata header.
+Local reports contain a hashed session ID, status, project basename, bounded session title, timestamps, process ancestry and optional host App hint. They exclude prompts, tool arguments/results and full working-directory paths. Codex classification reads a bounded first session-metadata line; saved titles come from the bounded session-title index.
 
-The optional update check contacts this repository's public GitHub Releases API. It opens the release page; it does not install updates automatically or upload your session content. You can disable automatic checks in settings.
+The optional update check contacts this repository's public GitHub Releases API and opens the release page. It uploads no session data and installs nothing automatically. **When upgrading from 0.1.x, download the DMG manually:** those versions recognize ZIP assets only.
 
-## Build or contribute
+If sessions are missing, check adapter installation and trust, reload the client, and start another turn. If opening fails, check the host is still running and issue a fresh lifecycle event. For a missing Live Activity, enable it in Settings and check for a running or recently completed session.
 
-For local builds, release packaging, and verification, see [the release guide](docs/RELEASES.md), [desktop hook details](docs/DESKTOP-HOOKS.md), and [the verification skill](.cursor/skills/verify-dynamic-agents/SKILL.md). CI checks the code; release packages are compiled and uploaded from a local Mac.
+## Development
+
+See [release packaging](docs/RELEASES.md), [hook details](docs/DESKTOP-HOOKS.md), and [UI verification](.cursor/skills/verify-dynamic-agents/SKILL.md). CI checks code; DMGs are built and uploaded locally.

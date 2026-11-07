@@ -9,6 +9,13 @@ public struct DesktopHookEvent: Decodable, Sendable {
     public let project: String
     public let ancestorPIDs: [Int32]
     public private(set) var title: String?
+    public let runtimePID: Int32?
+    public let hostBundleIDHint: String?
+    public let completedAt: TimeInterval?
+    private var completionTime: TimeInterval? {
+        guard let value = completedAt ?? (status == "done" ? timestamp : nil), value.isFinite, value >= 0, value <= timestamp else { return nil }
+        return value
+    }
 
     public func withTitle(_ value: String?) -> Self {
         var event = self
@@ -19,17 +26,29 @@ public struct DesktopHookEvent: Decodable, Sendable {
     public func isCurrent(at now: Date) -> Bool {
         id.count == 64 && id.allSatisfy(\.isHexDigit) && DesktopHookSource(rawValue: source) != nil
             && timestamp.isFinite && timestamp <= now.timeIntervalSince1970 + 5
-            && now.timeIntervalSince1970 - timestamp < 86_400 && status != "ended"
+            && now.timeIntervalSince1970 - timestamp < 86_400 && (status != "ended" || completionTime != nil)
             && ancestorPIDs.count <= 40 && ancestorPIDs.allSatisfy { $0 > 1 }
             && Set(ancestorPIDs).count == ancestorPIDs.count
     }
 
-    public func agent(applications: [TerminalApplication], now: Date, processes: [ProcessRecord] = []) -> Agent? {
+    public func agent(applications: [HostApplication], now: Date, processes: [ProcessRecord] = []) -> Agent? {
         guard isCurrent(at: now) else { return nil }
-        let observedHost = ancestorPIDs.lazy.compactMap { pid in applications.first { $0.pid == pid } }.first
-        let host = source != "codex" || hasLiveCodex(in: processes, host: observedHost) ? observedHost : nil
-        let rawStatus = AgentStatus(serverValue: status)
-        let effective = host == nil && (rawStatus == .working || rawStatus == .blocked) ? AgentStatus.unknown : rawStatus
+        let observedHost = HostAppSelection.observed(event: self, applications: applications)
+        let resolvedHost = observedHost ?? HostAppSelection.hinted(event: self, applications: applications)
+        let live: Bool
+        if status == "ended" { live = false }
+        else if source == "codex" { live = hasLiveCodex(in: processes, host: observedHost) }
+        else if source == "pi" { live = hasLivePi(in: processes, host: observedHost) }
+        else {
+            live = observedHost != nil || processes.contains { process in
+                ancestorPIDs.contains(process.pid)
+                    && URL(fileURLWithPath: process.executable).lastPathComponent.lowercased() == (source == "cursor" ? "cursor-agent" : source)
+                    && process.startedAt.map { $0.timeIntervalSince1970 <= timestamp } == true
+            }
+        }
+        let host = live ? resolvedHost : nil
+        let rawStatus = status == "ended" && completionTime != nil ? AgentStatus.done : AgentStatus(serverValue: status)
+        let effective = !live && (rawStatus == .working || rawStatus == .blocked) ? AgentStatus.unknown : rawStatus
         let kind = source == "copilot" ? "copilot" : source
         let kindName = AgentKind(rawValue: kind).displayName
         let displayName: String?
@@ -38,21 +57,37 @@ public struct DesktopHookEvent: Decodable, Sendable {
             else if let host { displayName = "Codex CLI · " + host.name }
             else { displayName = "Codex" }
         } else { displayName = nil }
-        let displayHost = rawStatus == .done ? observedHost : host
+        let displayHost = rawStatus == .done ? resolvedHost : host
         return Agent(hookID: id, kind: kind, title: SessionTitle.normalized(title) ?? kindName + " · " + String(id.prefix(6)),
                      project: project.isEmpty ? L10n.text("Unknown Project") : project,
-                     status: effective, sequence: sequence,
-                     completedAt: rawStatus == .done ? Date(timeIntervalSince1970: timestamp) : nil,
+                     status: effective,
+                     completedAt: completionTime.map { Date(timeIntervalSince1970: $0) },
                      hostBundleID: displayHost?.bundleID, hostName: displayHost?.name, displayName: displayName,
-                     isSessionAvailable: host != nil)
+                     isSessionAvailable: live)
     }
 
-    private func hasLiveCodex(in processes: [ProcessRecord], host: TerminalApplication?) -> Bool {
-        guard let host else { return false }
+    private func hasLivePi(in processes: [ProcessRecord], host: HostApplication?) -> Bool {
+        guard let runtimePID, ancestorPIDs.contains(runtimePID),
+              let runtime = processes.first(where: { $0.pid == runtimePID }),
+              let started = runtime.startedAt, started.timeIntervalSince1970 <= timestamp else { return false }
+        guard let host else { return true }
+        let byPID = Dictionary(processes.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        var parent = runtime.parentPID
+        var visited = Set<Int32>()
+        while parent > 1, visited.insert(parent).inserted {
+            if parent == host.pid { return true }
+            guard let next = byPID[parent], next.startedAt.map({ $0.timeIntervalSince1970 <= timestamp }) ?? true else { break }
+            parent = next.parentPID
+        }
+        return false
+    }
+
+    private func hasLiveCodex(in processes: [ProcessRecord], host: HostApplication?) -> Bool {
         let byPID = Dictionary(processes.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
         for pid in ancestorPIDs {
             guard let runtime = byPID[pid], URL(fileURLWithPath: runtime.executable).lastPathComponent.lowercased() == "codex",
                   let started = runtime.startedAt, started.timeIntervalSince1970 <= timestamp else { continue }
+            guard let host else { return true }
             var parent = runtime.parentPID
             var visited = Set<Int32>()
             while parent > 1, visited.insert(parent).inserted {
@@ -66,10 +101,11 @@ public struct DesktopHookEvent: Decodable, Sendable {
 }
 
 public enum DesktopHookSource: String, CaseIterable, Identifiable, Sendable {
-    case claude, codex, cursor, copilot
+    case pi, claude, codex, cursor, copilot
     public var id: String { rawValue }
     public var label: String {
         switch self {
+        case .pi: "Pi"
         case .claude: "Claude Code Desktop / CLI"
         case .codex: "Codex App / CLI"
         case .cursor: "Cursor"
@@ -110,7 +146,7 @@ public enum DesktopHooks {
 
     private static func request(_ source: DesktopHookSource, action: String) async throws -> DesktopHookInstallation {
         guard ["status", "install", "remove"].contains(action), let script else {
-            throw HerdrError.message(L10n.text("The desktop hook helper is unavailable. Rebuild the app."))
+            throw AgentError.message(L10n.text("The desktop hook helper is unavailable. Rebuild the app."))
         }
         let data = try await CommandRunner.run(executable: "/usr/bin/env", arguments: ["python3", script.path, action, source.rawValue])
         return try JSONDecoder().decode(DesktopHookInstallation.self, from: data)
@@ -123,8 +159,8 @@ public enum DesktopHooks {
         let events = reports.map { event in
             event.source == "codex" ? event.withTitle(titles[event.id] ?? event.title) : event
         }
-        let pids = Set(events.filter { $0.source == "codex" }.flatMap(\.ancestorPIDs))
-        let processes = (try? await ProcessInventory.capture(herdrExecutable: HerdrClient.defaultExecutable, onlyPIDs: pids)) ?? []
+        let pids = Set(events.flatMap(\.ancestorPIDs))
+        let processes = (try? await ProcessInventory.capture(onlyPIDs: pids)) ?? []
         return (events, processes)
     }
 

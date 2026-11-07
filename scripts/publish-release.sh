@@ -23,7 +23,7 @@ existing = refs.get(ref + '^{}', refs.get(ref))
 assert existing is None or existing == sys.argv[2], 'Version tag already points to another commit'
 PY
 [[ "$commit" == "$(git rev-parse origin/main)" ]] || { echo 'Push the release source to origin/main first.' >&2; exit 1; }
-archive="DynamicAgents-$version-arm64.zip"
+archive="DynamicAgents-$version-arm64.dmg"
 for file in "$archive" "$archive.sha256" "$archive.manifest.json"; do
   [[ -f "dist/releases/$file" ]] || { echo "Missing local artifact: $file" >&2; exit 1; }
 done
@@ -36,6 +36,7 @@ value = json.loads(Path(sys.argv[1]).read_text())
 assert value['version'] == sys.argv[2] and value['sourceCommit'] == sys.argv[3], 'Artifact source/version mismatch'
 assert value['sourceDirty'] is False and value['builtLocally'] is True, 'Repackage the clean source on this Mac'
 assert value['signing'] == 'ad-hoc' and value['notarized'] is False, 'Unexpected release signing policy'
+assert value.get('format') == 'dmg', 'Only DMG releases are published'
 PY
 repo='RTLiang/dynamic-agents'
 tag="v$version"

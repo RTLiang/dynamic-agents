@@ -25,7 +25,7 @@ struct AgentActivityContentView: View {
                     .padding(.bottom, 4)
             }
             ForEach(state.items) { agent in
-                Button(intent: FocusAgentIntent(paneID: agent.id, languageIdentifier: state.languageIdentifier)) {
+                Button(intent: FocusAgentIntent(agentID: agent.id, languageIdentifier: state.languageIdentifier)) {
                     HStack(spacing: 12) {
                         Text(agent.title)
                             .font(.system(size: 15, weight: .medium))
@@ -44,7 +44,7 @@ struct AgentActivityContentView: View {
                 .disabled(stale || !state.connected)
                 .accessibilityIdentifier("focus-agent-\(agent.id)")
                 .accessibilityLabel(L10n.format("%@, %@, %@", agent.kindName, agent.title, agent.status.label(locale: state.locale), locale: state.locale))
-                .accessibilityHint(L10n.text("Open Agent", locale: state.locale))
+                .accessibilityHint(L10n.text("Open App", locale: state.locale))
             }
             if state.total > state.items.count {
                 Link(L10n.format("session.more", Int64(state.total - state.items.count), locale: state.locale), destination: AgentHandoff.dashboardURL)
