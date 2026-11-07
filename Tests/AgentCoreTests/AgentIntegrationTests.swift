@@ -76,7 +76,7 @@ private final class SocketFixture: @unchecked Sendable {
             }
             if delay > 0 { usleep(delay) }
             for chunk in [reply.prefix(reply.count / 2), reply.suffix(reply.count - reply.count / 2)] {
-                _ = chunk.withUnsafeBytes { Darwin.send(peer, $0.baseAddress!, chunk.count, 0) }
+                _ = chunk.withUnsafeBytes { Darwin.send(peer, $0.baseAddress!, chunk.count, MSG_NOSIGNAL) }
             }
             return request
         }
