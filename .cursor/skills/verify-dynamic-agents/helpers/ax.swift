@@ -39,6 +39,10 @@ func tree(_ element: AXUIElement, depth: Int = 0) -> [String: Any] {
 let arguments = CommandLine.arguments
 require(arguments.count >= 4, "usage: ax <pid> <bundle-id> <doctor|snapshot|duration>")
 require(AXIsProcessTrusted(), "Accessibility permission is required for the tool launching this helper")
+if let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+   (session["CGSSessionScreenIsLocked"] as? NSNumber)?.boolValue == true {
+    require(false, "macOS session is locked; unlock before driving UI")
+}
 guard let pid = Int32(arguments[1]) else { require(false, "invalid PID"); exit(1) }
 var candidate: NSRunningApplication?
 for _ in 0..<50 {
@@ -59,6 +63,9 @@ if action == "doctor" {
         ready = table != nil && first != nil && second != nil && connected != nil
         if ready { break }
         waitFor(0.2)
+    }
+    if !ready, let data = try? JSONSerialization.data(withJSONObject: tree(root), options: [.prettyPrinted, .sortedKeys]) {
+        print(String(decoding: data, as: UTF8.self))
     }
     require(ready, "dashboard and both fixture agents are not ready")
     print("ready: isolated app PID \(pid), connected dashboard with both fixture agents")
@@ -119,6 +126,70 @@ if action == "doctor" {
     }
     waitFor(1)
     print("typed in \(arguments[4]): \(arguments[5])")
+} else if action == "integrations" {
+    _ = app.activate(options: [.activateAllWindows])
+    waitFor()
+    func press(_ element: AXUIElement?, _ description: String) {
+        guard let element else { require(false, "missing \(description)"); exit(1) }
+        require(AXUIElementPerformAction(element, kAXPressAction as CFString) == .success, "cannot press \(description)")
+        print("action: \(description)")
+        waitFor()
+    }
+    press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Connection Settings") }, "Connection Settings")
+    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "manage-agent-integrations" }, "Manage Integrations")
+    func expectRow(_ target: String, state: String) {
+        for _ in 0..<60 {
+            if let row = find(root, matching: { attribute($0, kAXIdentifierAttribute) as? String == "integration-row-\(target)" }),
+               let data = try? JSONSerialization.data(withJSONObject: tree(row)),
+               String(decoding: data, as: UTF8.self).contains(state) {
+                print("result: \(target) = \(state)")
+                return
+            }
+            waitFor(0.1)
+        }
+        require(false, "\(target) did not reach \(state)")
+    }
+    expectRow("codex", state: "Not Installed")
+    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "integration-install-codex" }, "Install Codex")
+    expectRow("codex", state: "Up to Date")
+    expectRow("claude", state: "Update Available")
+    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "integration-install-claude" }, "Update Claude Code")
+    expectRow("claude", state: "Up to Date")
+    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "integration-remove-codex" }, "Remove Codex")
+    expectRow("codex", state: "Not Installed")
+    print("PASS: agent-integrations")
+} else if action == "desktop-hooks" {
+    _ = app.activate(options: [.activateAllWindows])
+    waitFor()
+    func press(_ element: AXUIElement?, _ description: String) {
+        guard let element else { require(false, "missing \(description)"); exit(1) }
+        require(AXUIElementPerformAction(element, kAXPressAction as CFString) == .success, "cannot press \(description)")
+        print("action: \(description)")
+        waitFor()
+    }
+    press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Connection Settings") }, "Connection Settings")
+    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "manage-agent-integrations" }, "Manage Integrations")
+    press(find(root) { [kAXRadioButtonRole, kAXButtonRole].contains(attribute($0, kAXRoleAttribute) as? String ?? "") && labels($0).contains("Desktop Clients") }, "Desktop Clients")
+    func expect(_ source: String, label: String) -> AXUIElement {
+        for _ in 0..<80 {
+            if let button = find(root, matching: { attribute($0, kAXIdentifierAttribute) as? String == "desktop-hook-\(source)" && labels($0).contains(label) }),
+               (attribute(button, kAXEnabledAttribute) as? NSNumber)?.boolValue == true { return button }
+            waitFor(0.1)
+        }
+        require(false, "desktop hook \(source) never became \(label)")
+        exit(1)
+    }
+    for source in ["claude", "codex", "cursor", "copilot"] {
+        press(expect(source, label: "Install"), "Install \(source) desktop hook")
+        _ = expect(source, label: "Remove")
+        print("result: \(source) installed")
+    }
+    for source in ["claude", "codex", "cursor", "copilot"] {
+        press(expect(source, label: "Remove"), "Remove \(source) desktop hook")
+        _ = expect(source, label: "Install")
+        print("result: \(source) removed")
+    }
+    print("PASS: desktop-hooks")
 } else if action == "duration" {
     _ = app.activate(options: [.activateAllWindows])
     waitFor()

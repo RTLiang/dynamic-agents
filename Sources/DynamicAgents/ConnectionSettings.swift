@@ -10,11 +10,15 @@ struct ConnectionSettings: View {
     @State private var executable = ""
     @State private var session = ""
     @State private var terminal = ""
+    @State private var terminalClient = ""
     @State private var selectionError: String?
     @AppStorage("showMenuBarIcon") private var savedMenuBarIcon = true
     @State private var showMenuBarIcon = true
     @AppStorage("completionWindowMinutes") private var savedCompletionMinutes = 10
     @State private var completionMinutes = 10
+    @State private var showingIntegrations = false
+    @AppStorage("automaticallyCheckForUpdates") private var savedAutomaticUpdates = true
+    @State private var automaticUpdates = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,6 +40,11 @@ struct ConnectionSettings: View {
                         }
                     }
                 }
+                Section(L10n.text("Updates")) {
+                    Toggle(L10n.text("Automatically Check for Updates"), isOn: $automaticUpdates)
+                    Button(L10n.text("Check for Updates…")) { Task { await UpdateController.shared.check(manual: true) } }
+                        .disabled(UpdateController.shared.isChecking)
+                }
                 Section(L10n.text("Connection")) {
                     LabeledContent(L10n.text("herdr Path")) {
                         HStack {
@@ -50,6 +59,14 @@ struct ConnectionSettings: View {
                     }
                     TextField(L10n.text("Session Name"), text: $session, prompt: Text(L10n.text("Default Session")))
                 }
+                Section(L10n.text("Agent Integrations")) {
+                    Button(L10n.text("Manage Integrations…")) { showingIntegrations = true }
+                        .accessibilityIdentifier("manage-agent-integrations")
+                        .disabled(executable.trimmingCharacters(in: .whitespacesAndNewlines) != store.executable || session.trimmingCharacters(in: .whitespacesAndNewlines) != store.session)
+                    if executable.trimmingCharacters(in: .whitespacesAndNewlines) != store.executable || session.trimmingCharacters(in: .whitespacesAndNewlines) != store.session {
+                        Text(L10n.text("Save connection changes before managing integrations.")).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 Section(L10n.text("Terminal")) {
                     Picker(L10n.text("Open With"), selection: $terminal) {
                         Text(L10n.text("Automatic")).tag("")
@@ -59,6 +76,15 @@ struct ConnectionSettings: View {
                         }
                         if !terminal.isEmpty, !store.terminal.applications.contains(where: { $0.bundleID == terminal }) {
                             Text(L10n.text("Selected app unavailable")).tag(terminal)
+                        }
+                    }
+                    Picker(L10n.text("herdr Window"), selection: $terminalClient) {
+                        Text(L10n.text("Automatic")).tag("")
+                        ForEach(store.terminal.clients.filter { terminal.isEmpty || $0.application.bundleID == terminal }) { client in
+                            Text(client.label).tag(client.id)
+                        }
+                        if !terminalClient.isEmpty, !store.terminal.clients.contains(where: { $0.id == terminalClient }) {
+                            Text(L10n.text("Selected window unavailable")).tag(terminalClient)
                         }
                     }
                     Text(store.terminal.status(preferredBundleID: terminal)).foregroundStyle(.secondary)
@@ -81,6 +107,8 @@ struct ConnectionSettings: View {
                 Button(L10n.text("Save")) {
                     let path = executable.trimmingCharacters(in: .whitespacesAndNewlines)
                     let name = session.trimmingCharacters(in: .whitespacesAndNewlines)
+                    store.terminal.preferredClientID = terminalClient
+                    savedAutomaticUpdates = automaticUpdates
                     savedMenuBarIcon = showMenuBarIcon
                     savedCompletionMinutes = min(max(completionMinutes, 1), 1440)
                     Task { await store.applySettings(executable: path, session: name, terminalBundleID: terminal) }
@@ -92,8 +120,20 @@ struct ConnectionSettings: View {
         .frame(width: 520)
         .onAppear {
             executable = store.executable; session = store.session; terminal = store.terminalBundleID
+            terminalClient = store.terminal.preferredClientID
+            automaticUpdates = savedAutomaticUpdates
             showMenuBarIcon = savedMenuBarIcon
             completionMinutes = min(max(savedCompletionMinutes, 1), 1440)
+        }
+        .sheet(isPresented: $showingIntegrations) {
+            VStack(spacing: 0) {
+                IntegrationManagementView(client: store.client)
+                Divider()
+                HStack {
+                    Spacer()
+                    Button(L10n.text("Done")) { showingIntegrations = false }.keyboardShortcut(.defaultAction)
+                }.padding()
+            }.frame(width: 620, height: 560)
         }
         .task { await store.refreshTerminals() }
     }

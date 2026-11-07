@@ -21,12 +21,18 @@ public struct AgentActivityFeed: Codable, Equatable, Sendable {
         let continuous = observedAt.map { now.timeIntervalSince($0) >= 0 && now.timeIntervalSince($0) <= 5 } ?? false
         var next: [String: Observation] = [:]
         for agent in agents {
-            let previous = observations[agent.id].flatMap {
+            let legacy = agent.herdrSession != nil ? observations[agent.paneID] : nil
+            let previous = (observations[agent.id] ?? legacy).flatMap {
                 $0.terminalID == agent.terminalID && $0.kind == agent.kind ? $0 : nil
             }
             var completedAt = previous?.completedAt
+            if agent.isHookSession, agent.status == .done, let reported = agent.hookCompletedAt, reported <= now {
+                completedAt = reported
+            }
             if agent.status == .working || agent.status == .blocked || agent.status == .unknown {
                 completedAt = nil
+            } else if agent.isHookSession {
+                if agent.status != .done { completedAt = nil }
             } else if continuous, let previous {
                 let newCompletion = agent.completionSequence != nil && agent.completionSequence != previous.completionSequence
                 let enteredDone = agent.completionSequence == nil && agent.status == .done && previous.status != .done

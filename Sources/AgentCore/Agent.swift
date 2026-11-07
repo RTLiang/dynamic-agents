@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 public enum AgentStatus: String, CaseIterable, Sendable, Codable {
     case working, blocked, done, idle, unknown
@@ -50,7 +51,9 @@ public struct AgentKind: RawRepresentable, Hashable, Sendable {
 }
 
 public struct Agent: Identifiable, Equatable, Sendable, Decodable {
-    public let id: String
+    public private(set) var id: String
+    public let paneID: String
+    public private(set) var herdrSession: String?
     public let workspaceID: String
     public let kind: String?
     public private(set) var status: AgentStatus
@@ -60,6 +63,9 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
     public let displayAgent: String?
     public let terminalID: String?
     public let completionSequence: UInt64?
+    public let hostBundleID: String?
+    public let hookCompletedAt: Date?
+    public let isHookSession: Bool
     public var kindName: String {
         if let displayAgent, !displayAgent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return displayAgent }
         return AgentKind(rawValue: kind ?? "").displayName
@@ -74,6 +80,11 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
+        paneID = id
+        herdrSession = nil
+        hostBundleID = nil
+        hookCompletedAt = nil
+        isHookSession = false
         workspaceID = try c.decode(String.self, forKey: .workspaceID)
         kind = try c.decodeIfPresent(String.self, forKey: .kind)
         status = AgentStatus(serverValue: try c.decodeIfPresent(String.self, forKey: .status))
@@ -88,6 +99,35 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
         title = [name, metadataTitle, stripped, raw].compactMap { $0 }.first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             ?? AgentKind(rawValue: kind ?? "").displayName
     }
+    public init(hookID: String, kind: String, title: String, project: String, status: AgentStatus,
+                sequence: UInt64, completedAt: Date?, hostBundleID: String?, hostName: String? = nil) {
+        id = "hook:" + String(hookID.prefix(40))
+        paneID = id
+        herdrSession = nil
+        workspaceID = "desktop:" + project
+        self.kind = kind
+        self.title = title
+        self.status = status
+        cwd = ""
+        name = nil
+        displayAgent = hostName.map { AgentKind(rawValue: kind).displayName + " · " + $0 }
+        terminalID = "hook:" + hookID
+        completionSequence = status == .done ? sequence : nil
+        self.hookCompletedAt = completedAt
+        self.hostBundleID = hostBundleID
+        isHookSession = true
+    }
+
+    public func scoped(to session: String) -> Self {
+        guard !isHookSession else { return self }
+        var agent = self
+        let name = session.isEmpty ? "default" : session
+        let digest = SHA256.hash(data: Data(name.utf8)).prefix(12).map { String(format: "%02x", $0) }.joined()
+        agent.id = "herdr:" + digest + ":" + paneID
+        agent.herdrSession = name
+        return agent
+    }
+
     public func withStatus(_ status: AgentStatus) -> Self {
         var agent = self
         agent.status = status
@@ -98,6 +138,7 @@ public struct Agent: Identifiable, Equatable, Sendable, Decodable {
 public struct Workspace: Decodable, Sendable {
     public let id: String
     public let label: String
+    public init(id: String, label: String) { self.id = id; self.label = label }
     enum CodingKeys: String, CodingKey { case id = "workspace_id", label }
 }
 

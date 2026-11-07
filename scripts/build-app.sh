@@ -6,6 +6,12 @@ if [[ "$mode" != "native" && "$mode" != "companion" ]]; then
   echo 'Usage: scripts/build-app.sh [native|companion]' >&2
   exit 2
 fi
+app_version="${APP_VERSION:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)}"
+app_build="${APP_BUILD:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Resources/Info.plist)}"
+if [[ ! "$app_version" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ || ! "$app_build" =~ ^[1-9][0-9]*$ ]]; then
+  echo 'APP_VERSION must be a stable semantic version and APP_BUILD a positive integer.' >&2
+  exit 2
+fi
 supports_native_sdk() {
   python3 -c 'import sys; v=tuple(map(int, sys.argv[1].split(".")[:2])); sys.exit(0 if v >= (27,3) else 1)' "$1"
 }
@@ -35,12 +41,11 @@ if [[ "$mode" == "native" ]]; then
   python3 scripts/generate-project.py
   xcodebuild -project DynamicAgents.xcodeproj -scheme DynamicAgents \
     -configuration Release -derivedDataPath .build/xcode \
-    CODE_SIGNING_ALLOWED=NO build
+    ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
   destination="dist/DynamicAgents.app"
   if [[ -e "$destination" ]]; then trash "$destination"; fi
   ditto .build/xcode/Build/Products/Release/DynamicAgents.app "$destination"
   /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 27.3' "$destination/Contents/Info.plist"
-  codesign --force --sign - --entitlements Resources/Widget.entitlements "$destination/Contents/PlugIns/DynamicAgentsWidgets.appex"
 else
   swift scripts/generate-icon.swift
   iconutil -c icns .build/AppIcon.iconset -o Resources/AppIcon.icns
@@ -53,9 +58,23 @@ else
   cp Resources/Info.plist "$destination/Contents/Info.plist"
   cp Resources/AppIcon.icns "$destination/Contents/Resources/AppIcon.icns"
   ditto "$bin_path/DynamicAgents_AgentCore.bundle" "$destination/Contents/Resources/DynamicAgents_AgentCore.bundle"
+  for language in en zh-Hans; do
+    mkdir -p "$destination/Contents/Resources/$language.lproj"
+    cp "Sources/AgentCore/Resources/$language.lproj/InfoPlist.strings" "$destination/Contents/Resources/$language.lproj/InfoPlist.strings"
+  done
   /usr/libexec/PlistBuddy -c 'Set :NSSupportsLiveActivities false' "$destination/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c 'Set :LSMinimumSystemVersion 15.0' "$destination/Contents/Info.plist"
 fi
-codesign --force --sign - "$destination"
-codesign --verify --strict "$destination"
+stamp_version() {
+  /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $app_version" "$1"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $app_build" "$1"
+}
+stamp_version "$destination/Contents/Info.plist"
+if [[ "$mode" == "native" ]]; then
+  extension="$destination/Contents/PlugIns/DynamicAgentsWidgets.appex"
+  stamp_version "$extension/Contents/Info.plist"
+  codesign --force --sign - --entitlements Resources/Widget.entitlements "$extension"
+fi
+codesign --force --sign - --entitlements Resources/App.entitlements "$destination"
+codesign --verify --deep --strict "$destination"
 echo "Built $destination"

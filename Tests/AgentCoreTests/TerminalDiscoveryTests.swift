@@ -29,9 +29,9 @@ private func process(_ pid: Int32, _ parent: Int32, _ args: [String]? = nil) -> 
     }
 }
 
-@Test func reportsAmbiguityWithoutGuessingAndDeduplicatesOneApp() {
+@Test func reportsAmbiguityWithoutGuessingAndPreservesSameAppClients() {
     let sameApp = [process(40, 10, ["herdr"]), process(41, 10, ["herdr"])]
-    #expect(TerminalResolver.resolve(processes: sameApp, applications: [ghostty], session: "") == .resolved(ghostty))
+    #expect(TerminalResolver.resolve(processes: sameApp, applications: [ghostty], session: "") == .ambiguous([ghostty]))
     let multiple = sameApp + [process(50, 20, ["herdr"])]
     #expect(TerminalResolver.resolve(processes: multiple, applications: [terminal, ghostty], session: "") == .ambiguous([ghostty, terminal]))
 }
@@ -58,9 +58,8 @@ private func process(_ pid: Int32, _ parent: Int32, _ args: [String]? = nil) -> 
         guard app.activationPolicy == .regular, let id = app.bundleIdentifier, let url = app.bundleURL else { return nil }
         return TerminalApplication(pid: app.processIdentifier, bundleID: id, name: app.localizedName ?? id, path: url.path)
     }
-    let result = TerminalResolver.resolve(processes: records, applications: apps, session: "")
-    #expect(result.application != nil)
-    if let app = result.application {
-        print("Detected live herdr terminal: \(app.name) / \(app.bundleID) / pid \(app.pid)")
-    }
+    let socket = try await HerdrClient().socketPath()
+    let clients = TerminalResolver.resolveClients(processes: records, applications: apps, session: "", socketPath: socket)
+    #expect(!clients.isEmpty)
+    #expect(clients.allSatisfy { $0.tty != nil })
 }

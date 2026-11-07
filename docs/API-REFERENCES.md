@@ -9,7 +9,7 @@
 
 ## herdr
 
-[herdr Socket API](https://herdr.dev/docs/socket-api/) 提供快照与 agent 聚焦。应用使用 `herdr api snapshot` 获取权威快照，并调用 `herdr agent focus <target>` 选中 pane。支持类型和集成方式以 [herdr Agents](https://herdr.dev/docs/agents/) 与 [Integrations](https://herdr.dev/docs/integrations/) 为准。
+[herdr Socket API](https://herdr.dev/docs/socket-api/) 提供快照与 agent 聚焦。应用使用显式 `--session <name> api snapshot` 获取权威快照，通过 `agent attach <target>` 打开独立视图；公共 focus 方法会广播到多个客户端，应用导航不使用它。支持类型和集成方式以 [herdr Agents](https://herdr.dev/docs/agents/) 与 [Integrations](https://herdr.dev/docs/integrations/) 为准。
 
 ## 其他参考项目
 

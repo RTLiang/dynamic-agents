@@ -8,6 +8,7 @@ import AgentCore
 struct DynamicAgentsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var store = AgentStore.shared
+    @State private var updates = UpdateController.shared
     @AppStorage("showMenuBarIcon") private var showMenuBarIcon = true
 
     var body: some Scene {
@@ -18,6 +19,7 @@ struct DynamicAgentsApp: App {
                     if !ProcessInfo.processInfo.arguments.contains("--verify-live-activity") { store.start() }
                     delegate.verifyLiveActivityIfRequested(store: store)
                 }
+                .task { await updates.check(manual: false) }
                 .onOpenURL { url in
                     guard url.scheme == "dynamicagents", url.host == "agent",
                           let id = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "pane" })?.value else { return }
@@ -30,6 +32,10 @@ struct DynamicAgentsApp: App {
         .defaultSize(width: 820, height: 480)
         .commands {
             CommandGroup(replacing: .newItem) { }
+            CommandGroup(after: .appInfo) {
+                Button(updates.menuTitle) { Task { await updates.check(manual: true) } }
+                    .disabled(updates.isChecking)
+            }
             CommandGroup(after: .toolbar) {
                 Button(L10n.text("Refresh Status")) { Task { await store.refresh() } }.keyboardShortcut("r")
                 Toggle(L10n.text("Show Menu Bar Icon"), isOn: $showMenuBarIcon)
@@ -73,7 +79,7 @@ struct AgentMenu: View {
         if let error = store.actionError { Text(error) }
         Divider()
         Button(L10n.text("Open Terminal")) { Task { await store.openTerminal() } }
-            .disabled(!store.connected)
+            .disabled(!store.herdrConnected)
         Button(L10n.text("Open Dynamic Agents")) {
             openWindow(id: "dashboard")
             NSApp.activate(ignoringOtherApps: true)

@@ -16,10 +16,8 @@ enum BackgroundHandoffVerification {
                 throw HerdrError.message("The focused pane must be a tracked agent to verify handoff without changing the user's selection.")
             }
             await store.refreshTerminals()
-            guard let terminal = store.terminal.resolution(preferredBundleID: store.terminalBundleID).application else {
-                throw HerdrError.message("No terminal resolved for the handoff check.")
-            }
-            try await store.terminal.activate(preferredBundleID: store.terminalBundleID)
+            let terminal = try store.terminal.prepareFocus(paneID: pane, preferredBundleID: store.terminalBundleID).client.application
+            try await store.terminal.activate(preferredBundleID: store.terminalBundleID, paneID: pane)
             for _ in 0..<30 {
                 if NSWorkspace.shared.frontmostApplication?.bundleIdentifier == terminal.bundleID && !NSApp.isActive { break }
                 try await Task.sleep(for: .milliseconds(100))
@@ -36,7 +34,10 @@ enum BackgroundHandoffVerification {
             }
             defer { center.removeObserver(observer) }
             report["frontmostBefore"] = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
-            _ = try await FocusAgentIntent(paneID: pane).perform()
+            guard let agent = store.agents.first(where: { $0.paneID == pane && !$0.isHookSession }) else {
+                throw HerdrError.message("The scoped agent is no longer available.")
+            }
+            _ = try await FocusAgentIntent(paneID: agent.id).perform()
             try await Task.sleep(for: .milliseconds(500))
             let after = try await store.client.snapshot()
             let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
@@ -46,7 +47,10 @@ enum BackgroundHandoffVerification {
             report["frontmostAfter"] = frontmost
             report["paneBefore"] = pane
             report["paneAfter"] = after.focusedPaneID ?? ""
-            report["passed"] = !flashed && frontmost == terminal.bundleID && after.focusedPaneID == pane && store.actionError == nil
+            await store.refreshTerminals()
+            let exactWindow = try store.terminal.attachmentIsFocused(paneID: agent.paneID, preferredBundleID: store.terminalBundleID)
+            report["exactWindowVerified"] = exactWindow
+            report["passed"] = !flashed && exactWindow && frontmost == terminal.bundleID && after.focusedPaneID == pane && store.actionError == nil
             report["error"] = store.actionError ?? ""
         } catch { report["error"] = error.localizedDescription }
         return report

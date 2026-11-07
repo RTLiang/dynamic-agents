@@ -1,31 +1,27 @@
 # Terminal focus
 
-Users select an agent and return to the corresponding herdr pane in its hosting terminal without the app briefly coming to the front during a Widget action.
+Dashboard, menu and background Widget actions open the selected agent in its herdr session and terminal window. Reuse an existing dedicated attachment; otherwise create a tab in the selected Ghostty/iTerm2 window, or a separate Apple Terminal window. Public herdr focus broadcasts are intentionally absent.
 
-## Sub-features
+## Entry points
 
-- `focus-dashboard`: row double-click, Return, context menu and toolbar entry.
-- `focus-menu`: choose an agent in the menu bar menu.
-- `focus-widget`: choose an expanded Live Activity row via background App Intent.
-- `focus-resolution`: automatic detection, ambiguous terminal choice and unavailable-terminal errors.
+Double-click a dashboard row, press Return on a selected row, use Open in Terminal, select a menu-bar agent, or click an expanded system Live Activity row. All entries use the same store action.
 
-## How to get to it (user POV)
+## Preconditions
 
-- Double-click a dashboard row, select it and press Return, or use `Open in Terminal` in its context menu or toolbar.
-- Select an agent in the menu bar menu.
-- Open the Live Activity and choose an agent row.
+Use an unlocked GUI, a supported terminal with Automation consent, and dedicated herdr sessions. Honor user authorization already present in the conversation before requesting it again. Real focus opens or activates terminal views; use isolated owned sessions for new probes. The fixture only supports snapshot/status and integration requests; it cannot prove native window handoff.
 
-## Driving it with AX
+## Journeys
 
-Preconditions: a dedicated real local herdr session, at least one tracked agent, a known terminal host and explicit user permission to focus its pane or replace the installed App. The default fixture returns an error for `agent focus` and cannot prove terminal handoff. Avoid a session the user is actively editing.
+1. Run `HERDR_LIVE_TEST=1 swift test --build-system native` for read-only discovery. Record clients, PID/TTY and session distinctions in ignored evidence.
+2. Open two terminal windows with different named herdr sessions. Configure one session; click its dashboard agent. Confirm the new attachment uses that session and the intended window, while the other window retains its workspace/tab/pane.
+3. Open two clients of the same session. Choose one in Connection Settings → herdr Window; click its agent. Confirm only that window gets a new attachment and that the original views retain their selections. Repeat the click: the existing attachment is selected without another tab.
+4. Select the other session in settings, then invoke the old scoped agent action. It must not open a same-named pane in the new session. Close the chosen client and retry: report its absence without choosing another window.
+5. Repeat required entries through the menu and system Widget. For Widget actions, observe activation notifications and require zero Dynamic Agents activations.
 
-- **Read-only preflight:** `HERDR_LIVE_TEST=1 swift test --build-system native` exercises real snapshot and terminal discovery, not UI interaction. Record its output without publishing local paths or session titles.
-- **Companion focus probe:** with a dedicated session and consent, run `bash scripts/build-app.sh companion` then `bash scripts/verify-terminal.sh`. This creates a separate app process and focuses the currently focused pane; check the report's before/after pane and frontmost terminal. It is not proof of every UI entry point.
-- **Native intent probe:** follow the native setup and `--verify-live-activity` command in [live-activity.md](live-activity.md). It directly calls the real intent and records activations; it is not a system Widget click.
-- **Full UI proof:** drive each requested dashboard, menu or Widget entry, record the selected pane before/after via `herdr api snapshot`, and the frontmost app via NSWorkspace. For Widget clicks, record the activation sequence and require no Dynamic Agents activation. Capture action and result separately.
+For each action capture before/action/after separately: native terminal window and selected surface IDs, the attachment client TTY/PID/argv, unchanged original client locations and frontmost application. A global `focused_pane_id` remaining unchanged helps demonstrate isolation but cannot prove the right window is frontmost.
 
-## Gotchas
+`bash scripts/verify-terminal.sh` opens/reuses the current agent attachment and reports `exactWindowVerified` using native surface identity. Native `--verify-live-activity` calls the real intent directly and checks the same condition; see [live-activity.md](live-activity.md). These probes do not establish a physical system Widget click.
 
-- Focus changes the selected pane and activates a real app. Do not run it against a user's live session without permission.
-- Terminal activation identifies an app, not the exact window/tab within that app.
-- A direct `perform()` call, successful CLI response, or frontend screenshot alone cannot establish a complete system Widget-click handoff.
+## Boundaries
+
+A locked screen or absent Automation permission blocks real window verification; report that precondition and retain build/model evidence. AppleScript compilation only checks grammar and dictionary contracts. Unsupported terminals fail explicitly. General desktop editor hooks activate the observed host app; selecting a particular editor conversation is outside this capability. Keep logs, window IDs, paths and session data under ignored `.build/`.

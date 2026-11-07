@@ -5,13 +5,14 @@ helpers="$root/.cursor/skills/verify-dynamic-agents/helpers"
 action="${1:-}"
 run="${2:-}"
 if [[ ! "$run" =~ ^[a-z0-9]{1,32}$ ]]; then
-  echo 'Usage: control <launch|doctor|snapshot|duration|menu|press|set|type|cleanup> <lowercase-alphanumeric-run-id> [arguments]' >&2
+  echo 'Usage: control <launch|doctor|snapshot|duration|integrations|desktop-hooks|menu|press|set|type|cleanup> <lowercase-alphanumeric-run-id> [arguments]' >&2
   exit 2
 fi
 scratch="$root/.build/verify-dynamic-agents/$run"
 evidence="$root/.build/verify-dynamic-agents-evidence/$run"
 app="$scratch/DynamicAgents.app"
 bundle="dev.local.dynamicagents.verify$run"
+socket_path="/tmp/dav-$run.sock"
 mkdir -p "$root/.build/verify-dynamic-agents" "$root/.build/verify-dynamic-agents-evidence"
 process_matches() {
   local pid="${1:-}"
@@ -35,13 +36,26 @@ cleanup() {
       echo 'Recorded PID belongs to another process; scratch retained.' >&2; return 1
     fi
   fi
+  if [[ -f "$scratch/server-pid" ]]; then
+    local server_pid server_command
+    server_pid="$(<"$scratch/server-pid")"
+    server_command="$(ps -p "$server_pid" -o command= 2>/dev/null || true)"
+    if [[ "$server_command" == *"$helpers/integration-fixture $socket_path $evidence"* ]]; then
+      kill -TERM "$server_pid"
+      for _ in $(seq 1 30); do kill -0 "$server_pid" 2>/dev/null || break; sleep 0.1; done
+      if kill -0 "$server_pid" 2>/dev/null; then echo 'Fixture server did not exit.' >&2; return 1; fi
+    elif kill -0 "$server_pid" 2>/dev/null; then
+      echo 'Recorded fixture PID was reused; refusing cleanup.' >&2; return 1
+    fi
+  fi
+  if [[ -f "$scratch/socket-created" && -S "$socket_path" ]]; then trash "$socket_path"; fi
   defaults delete "$bundle" >/dev/null 2>&1 || true
   if [[ -d "$scratch" ]]; then command -v trash >/dev/null; trash "$scratch"; fi
   echo "Cleaned verification instance; evidence retained at $evidence"
 }
 case "$action" in
   launch)
-    [[ ! -e "$scratch" && ! -e "$evidence" ]] || { echo 'Run ID already exists; choose another.' >&2; exit 1; }
+    [[ ! -e "$scratch" && ! -e "$evidence" && ! -e "$socket_path" ]] || { echo 'Run ID already exists; choose another.' >&2; exit 1; }
     if defaults read "$bundle" >/dev/null 2>&1; then echo 'Preferences domain already exists; choose another run ID.' >&2; exit 1; fi
     mkdir -p "$scratch" "$evidence"
     printf '%s\n' "$bundle" > "$scratch/bundle-id"
@@ -58,13 +72,18 @@ case "$action" in
     /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$app/Contents/Info.plist"
     codesign --force --sign - "$app" > "$evidence/codesign.log" 2>&1
     swiftc "$helpers/ax.swift" -o "$scratch/ax" > "$evidence/ax-build.log" 2>&1
-    VERIFY_HERDR_TRACE="$evidence/herdr-commands.log" HERDR_BIN="$helpers/herdr-fixture" \
-      "$app/Contents/MacOS/DynamicAgents" -AppleLanguages '(en)' > "$evidence/app.log" 2>&1 &
-    echo "$!" > "$scratch/pid"
+    "$helpers/integration-fixture" "$socket_path" "$evidence" > "$evidence/fixture-server.log" 2>&1 &
+    echo "$!" > "$scratch/server-pid"
+    for _ in $(seq 1 30); do [[ -S "$socket_path" ]] && break; sleep 0.1; done
+    [[ -S "$socket_path" ]] || { echo 'Fixture socket did not start.' >&2; exit 1; }
+    touch "$scratch/socket-created"
+    DYNAMIC_AGENTS_DATA_DIR="$scratch/desktop-data" DYNAMIC_AGENTS_CONFIG_HOME="$scratch/config" VERIFY_HERDR_SOCKET="$socket_path" VERIFY_HERDR_TRACE="$evidence/herdr-commands.log" HERDR_BIN="$helpers/herdr-fixture" \
+      swift "$helpers/launch.swift" "$app" > "$scratch/pid" 2> "$evidence/app-launch.log"
+    [[ "$(<"$scratch/pid")" =~ ^[0-9]+$ ]] || { echo 'App launch returned no PID.' >&2; exit 1; }
     "$0" doctor "$run" | tee "$evidence/doctor.txt"
     echo "Evidence: $evidence"
     ;;
-  doctor|snapshot|duration|menu|press|set|type)
+  doctor|snapshot|duration|integrations|desktop-hooks|menu|press|set|type)
     [[ -f "$scratch/pid" && -x "$scratch/ax" ]] || { echo 'Run was not launched.' >&2; exit 1; }
     pid="$(<"$scratch/pid")"
     process_matches "$pid" || { echo 'The recorded verification process is not running.' >&2; exit 1; }

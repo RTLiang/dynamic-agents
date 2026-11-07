@@ -25,6 +25,9 @@ final class AgentStore {
     private var refreshing = false
     private var suspended = false
     private var activityFeed = AgentActivityFeed()
+    private var herdrAgents: [Agent] = []
+    private var herdrWorkspaces: [Workspace] = []
+    private(set) var herdrConnected = false
 
     init() {
         let defaults = UserDefaults.standard
@@ -67,18 +70,33 @@ final class AgentStore {
         do {
             let snapshot = try await requestClient.snapshot()
             guard !Task.isCancelled, requestClient.executable == executable, requestClient.session == session else { return }
-            agents = snapshot.trackedAgents
-            if activityFeed.observe(agents, at: .now), let data = try? JSONEncoder().encode(activityFeed) {
-                UserDefaults.standard.set(data, forKey: "activityFeed")
-            }
-            workspaces = snapshot.workspaces
-            connected = true
+            herdrAgents = snapshot.trackedAgents.map { $0.scoped(to: requestClient.session) }
+            herdrWorkspaces = snapshot.workspaces
+            herdrConnected = true
             connectionError = nil
             lastUpdated = .now
         } catch {
             guard !Task.isCancelled, requestClient.executable == executable, requestClient.session == session else { return }
-            connected = false
+            herdrConnected = false
             connectionError = error.localizedDescription
+        }
+        let runningApps = NSWorkspace.shared.runningApplications
+        let launchDates = Dictionary(runningApps.compactMap { app in app.launchDate.map { (app.processIdentifier, $0) } }, uniquingKeysWith: { first, _ in first })
+        let applications = runningApps.compactMap { app -> TerminalApplication? in
+            guard app.activationPolicy == .regular, let bundle = app.bundleIdentifier, let url = app.bundleURL else { return nil }
+            return TerminalApplication(pid: app.processIdentifier, bundleID: bundle, name: app.localizedName ?? bundle, path: url.path)
+        }
+        let events = await Task.detached(priority: .utility) { DesktopHooks.readEvents() }.value
+        let desktopAgents = events.compactMap { event in
+            let hosts = applications.filter { launchDates[$0.pid].map { $0.timeIntervalSince1970 <= event.timestamp } ?? false }
+            return event.agent(applications: hosts, now: .now)
+        }
+        agents = (herdrConnected ? herdrAgents : herdrAgents.map { $0.withStatus(.unknown) }) + desktopAgents
+        let desktopWorkspaces = Dictionary(desktopAgents.map { ($0.workspaceID, $0.title) }, uniquingKeysWith: { first, _ in first })
+        workspaces = herdrWorkspaces + desktopWorkspaces.map { Workspace(id: $0.key, label: $0.value) }
+        connected = herdrConnected || !desktopAgents.isEmpty
+        if activityFeed.observe(agents, at: .now), let data = try? JSONEncoder().encode(activityFeed) {
+            UserDefaults.standard.set(data, forKey: "activityFeed")
         }
         await liveActivity.update(activityState, session: session)
     }
@@ -93,7 +111,11 @@ final class AgentStore {
         self.terminalBundleID = terminalBundleID
         if connectionChanged {
             await liveActivity.stop()
+            terminal.preferredClientID = ""
             agents = []
+            herdrAgents = []
+            herdrWorkspaces = []
+            herdrConnected = false
             activityFeed = AgentActivityFeed()
             UserDefaults.standard.removeObject(forKey: "activityFeed")
             workspaces = []
@@ -117,12 +139,38 @@ final class AgentStore {
         let requestClient = client
         let preferredTerminal = terminalBundleID
         defer { focusingID = nil }
-        do { try await requestClient.focus(agent.id) }
-        catch { actionError = error.localizedDescription; return }
+        if agent.isHookSession {
+            let events = await Task.detached { DesktopHooks.readEvents() }.value
+            guard let event = events.first(where: { "hook:" + $0.id == agent.terminalID }),
+                  let bundle = agent.hostBundleID,
+                  let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundle).first(where: {
+                      event.ancestorPIDs.contains($0.processIdentifier) && ($0.launchDate.map { $0.timeIntervalSince1970 <= event.timestamp } ?? false)
+                  }) else {
+                actionError = L10n.text("The hook session's host app is unavailable.")
+                return
+            }
+            if TerminalController.isTerminal(bundle) {
+                do { try await terminal.activateHook(event, host: app) }
+                catch { actionError = error.localizedDescription }
+            } else {
+                NSApp.yieldActivation(to: app)
+                app.unhide()
+                if !app.activate(options: []) { actionError = L10n.text("Unable to open the agent's desktop client.") }
+            }
+            return
+        }
+        guard herdrConnected else { actionError = connectionError; return }
+        guard agent.herdrSession == (session.isEmpty ? "default" : session), agents.contains(where: { $0.id == agent.id }) else {
+            actionError = L10n.text("This agent belongs to a different herdr session. Refresh the activity and try again.")
+            return
+        }
         await refreshTerminals()
         guard requestClient.executable == executable, requestClient.session == session, preferredTerminal == terminalBundleID else { return }
-        do { try await terminal.activate(preferredBundleID: preferredTerminal) }
-        catch { actionError = L10n.format("The herdr pane is selected. %@", error.localizedDescription) }
+        do {
+            let target = try terminal.prepareFocus(paneID: agent.paneID, preferredBundleID: preferredTerminal)
+            guard requestClient.executable == executable, requestClient.session == session else { return }
+            try terminal.present(target, paneID: agent.paneID, executable: requestClient.executable, session: requestClient.session)
+        } catch { actionError = error.localizedDescription }
         await refresh()
     }
 }

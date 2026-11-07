@@ -1,0 +1,38 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: xcode-27
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Test core and compile dashboard
+        run: swift test --build-system native -j 3
+      - name: Verify desktop hook adapters
+        run: python3 scripts/test-desktop-hooks.py
+      - name: Verify localization coverage
+        run: python3 scripts/check-localizations.py
+      - name: Verify generated Xcode project
+        run: |
+          python3 scripts/generate-project.py
+          git diff --exit-code -- DynamicAgents.xcodeproj
+      - name: Check shell syntax
+        run: |
+          for script in scripts/*.sh .cursor/skills/verify-dynamic-agents/helpers/control; do bash -n "$script"; done
+      - name: Build dashboard companion
+        run: bash scripts/build-app.sh companion

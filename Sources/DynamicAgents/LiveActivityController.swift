@@ -108,6 +108,7 @@ final class LiveActivityController {
     }
 
     func finish() async {
+        isEnabled = false
         await hide()
         #if NATIVE_LIVE_ACTIVITIES
         for activity in Activity<AgentActivityAttributes>.activities {

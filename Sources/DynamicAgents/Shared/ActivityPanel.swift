@@ -44,7 +44,7 @@ struct AgentActivityContentView: View {
                 .disabled(stale || !state.connected)
                 .accessibilityIdentifier("focus-agent-\(agent.id)")
                 .accessibilityLabel("\(agent.kindName)，\(agent.title)，\(agent.status.label)")
-                .accessibilityHint(L10n.text("Open in Terminal"))
+                .accessibilityHint(L10n.text("Open Agent"))
             }
             if state.total > state.items.count {
                 Link(L10n.format("session.more", Int64(state.total - state.items.count)), destination: URL(string: "dynamicagents://dashboard")!)

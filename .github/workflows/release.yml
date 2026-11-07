@@ -1,0 +1,88 @@
+name: Native Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, for example v0.1.0
+        required: true
+        type: string
+      publish:
+        description: Publish after verification (otherwise build artifacts only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ${{ vars.NATIVE_RELEASE_RUNNER || 'xcode-27' }}
+    timeout-minutes: 35
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      APP_BUILD: ${{ github.run_number }}
+    steps:
+      - name: Validate version tag
+        shell: bash
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]] || { echo "A stable vMAJOR.MINOR.PATCH tag is required" >&2; exit 2; }
+          echo "APP_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require a commit from main
+        run: git merge-base --is-ancestor HEAD origin/main
+      - name: Test
+        run: |
+          swift test --build-system native -j 3
+          python3 scripts/test-desktop-hooks.py
+          python3 scripts/check-localizations.py
+      - name: Build and package native app
+        run: env -u DEVELOPER_DIR bash scripts/package-release.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DynamicAgents-${{ env.RELEASE_TAG }}-arm64
+          path: dist/releases/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: DynamicAgents-${{ env.RELEASE_TAG }}-arm64
+          path: artifacts
+      - name: Verify archive checksum
+        working-directory: artifacts
+        run: sha256sum -c *.sha256
+      - name: Write release notes
+        shell: bash
+        run: |
+          printf '%s\n' 'Native Live Activities and Widget extension for Apple silicon. Requires macOS 27.3 or later.' '' 'Ad-hoc signed; not notarized. Download the ZIP and its SHA-256 checksum.' > release-notes.md
+      - name: Publish immutable assets once
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "This release already exists; refusing to replace published assets." >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" artifacts/* --verify-tag --title "Dynamic Agents ${RELEASE_TAG#v}" --notes-file release-notes.md --generate-notes

@@ -14,17 +14,32 @@ public struct HerdrClient: Sendable {
         let candidates = [env["HERDR_BIN"], "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr", NSHomeDirectory() + "/.local/bin/herdr"]
         return candidates.compactMap { $0 }.first { FileManager.default.isExecutableFile(atPath: $0) } ?? "/opt/homebrew/bin/herdr"
     }
-    private var prefix: [String] { session.isEmpty ? [] : ["--session", session] }
+    public var sessionName: String { session.isEmpty ? "default" : session }
+    private var prefix: [String] { ["--session", sessionName] }
     public func snapshot() async throws -> Snapshot {
         try Snapshot.decode(await CommandRunner.run(executable: executable, arguments: prefix + ["api", "snapshot"]))
     }
-    public func focus(_ pane: String) async throws {
-        let data = try await CommandRunner.run(executable: executable, arguments: prefix + ["agent", "focus", pane])
-        if let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let error = object["error"] as? [String: Any] {
-            throw HerdrError.message(error["message"] as? String ?? L10n.text("Unable to focus the agent"))
-        }
+    public func integrations() async throws -> [AgentIntegration] {
+        try AgentIntegration.decodeList(await integrationRequest(method: "integration.list", target: nil))
     }
+
+    public func changeIntegration(target: String, install: Bool) async throws {
+        let response = try await integrationRequest(method: install ? "integration.install" : "integration.uninstall", target: target)
+        try AgentIntegration.validateMutation(response, target: target)
+    }
+
+    public func socketPath() async throws -> String {
+        let status = try await CommandRunner.run(executable: executable, arguments: prefix + ["status", "--json"])
+        return try JSONDecoder().decode(HerdrEndpoint.self, from: status).socketPath
+    }
+
+    private func integrationRequest(method: String, target: String?) async throws -> Data {
+        let path = try await socketPath()
+        let request: [String: Any] = ["id": UUID().uuidString, "method": method, "params": target.map { ["target": $0] } ?? [:]]
+        let payload = try JSONSerialization.data(withJSONObject: request)
+        return try await LocalSocketRequest.send(path: path, payload: payload, timeout: target == nil ? 4 : 15)
+    }
+
 }
 
 // One bounded process per poll, with stdout and stderr drained concurrently.

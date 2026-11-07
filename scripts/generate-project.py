@@ -39,14 +39,14 @@ widget_sources = [
     "Sources/DynamicAgents/Shared/ActivityPanel.swift",
     "WidgetExtension/AgentLiveActivityWidget.swift",
 ]
-all_files = sorted(set(app_sources + widget_sources + ["Resources/Info.plist", "Resources/Widget-Info.plist", "Resources/Widget.entitlements", "Resources/AppIcon.icon"]))
+all_files = sorted(set(app_sources + widget_sources + ["Resources/Info.plist", "Resources/Widget-Info.plist", "Resources/App.entitlements", "Resources/Widget.entitlements", "Resources/AppIcon.icon", "Sources/AgentCore/Resources/desktop-hook.py"]))
 for path in all_files:
-    file_type = "sourcecode.swift" if path.endswith(".swift") else ("folder.iconcomposer.icon" if path.endswith(".icon") else "text.plist.xml")
+    file_type = "sourcecode.swift" if path.endswith(".swift") else ("folder.iconcomposer.icon" if path.endswith(".icon") else ("text.script.python" if path.endswith(".py") else "text.plist.xml"))
     obj(path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="SOURCE_ROOT")
 for name, extension, file_type in [("DynamicAgents", "app", "wrapper.application"), ("DynamicAgentsWidgets", "appex", "wrapper.app-extension")]:
     obj(name + "-product", "PBXFileReference", explicitFileType=file_type, path=name + "." + extension, sourceTree="BUILT_PRODUCTS_DIR")
 obj("products", "PBXGroup", children=[ref("DynamicAgents-product"), ref("DynamicAgentsWidgets-product")], name="Products", sourceTree="<group>")
-localized_resources = ["Localizable.strings", "Localizable.stringsdict"]
+localized_resources = ["Localizable.strings", "Localizable.stringsdict", "InfoPlist.strings"]
 for name in localized_resources:
     children = []
     for language in ["en", "zh-Hans"]:
@@ -68,6 +68,8 @@ for target, sources in [("DynamicAgents", app_sources), ("DynamicAgentsWidgets",
     if target == "DynamicAgents":
         obj("icon-build", "PBXBuildFile", fileRef=ref("Resources/AppIcon.icon"))
         resources.append(ref("icon-build"))
+        obj("desktop-hook-resource", "PBXBuildFile", fileRef=ref("Sources/AgentCore/Resources/desktop-hook.py"))
+        resources.append(ref("desktop-hook-resource"))
     obj(target + "-resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=resources, runOnlyForDeploymentPostprocessing=0)
 
 obj("embed-file", "PBXBuildFile", fileRef=ref("DynamicAgentsWidgets-product"), settings={"ATTRIBUTES": ["RemoveHeadersOnCopy"]})
@@ -91,6 +93,7 @@ for target in ["DynamicAgents", "DynamicAgentsWidgets"]:
     }
     if is_app:
         settings["ASSETCATALOG_COMPILER_APPICON_NAME"] = "AppIcon"
+        settings["CODE_SIGN_ENTITLEMENTS"] = "Resources/App.entitlements"
     if not is_app:
         settings.update({"APPLICATION_EXTENSION_API_ONLY": "YES", "SKIP_INSTALL": "YES", "CODE_SIGN_ENTITLEMENTS": "Resources/Widget.entitlements", "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) WIDGET_EXTENSION"})
     for config in ["Debug", "Release"]:

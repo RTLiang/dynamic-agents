@@ -9,5 +9,7 @@ Capture commands, resulting AX trees and side effects; report each tested entry 
 - [Dashboard and search](dashboard.md): list, search, empty state, filtering and selection.
 - [Connection and activity settings](settings.md): completion retention, Save and Cancel, connection fields.
 - [Menu bar visibility](menu-bar.md): hide and restore without quitting.
+- [Desktop client hooks](desktop-hooks.md): local lifecycle adapters, hook trust and host identity outside herdr.
+- [Agent integrations](integrations.md): inspect, install, update and remove herdr-managed hooks/plugins.
 - [Terminal focus](terminal-focus.md): focus and activate the correct terminal.
 - [Live Activity](live-activity.md): system presentation, filtering, lifecycle and interaction.

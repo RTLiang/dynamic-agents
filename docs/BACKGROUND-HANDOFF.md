@@ -1,8 +1,8 @@
 # 后台终端跳转
 
-实时活动中的 agent 行使用 `Button(intent: FocusAgentIntent(...))`。动作声明 `.background` 模式与主 App 执行目标，沿用应用的 pane 聚焦、终端发现与错误处理，不先打开主窗口。旧的 agent URL 仅保留兼容。
+实时活动中的 agent 行使用 `Button(intent: FocusAgentIntent(...))`。动作声明 `.background` 模式与主 App 执行目标，沿用应用的客户端窗口定位、agent 直连与错误处理，不先打开主窗口。活动 ID 按 herdr session 隔离；URL 也只接受当前活动对应的带命名空间 ID。
 
-验证模式只重新聚焦当前选中的 agent，不发送输入。它先激活终端，再直接执行同一个 intent，并通过激活通知检查 App 是否出现在前台：
+验证模式为当前选中的 agent 打开或复用直连视图，不向 agent 发送输入。它先激活所选客户端，再直接执行同一个 intent，通过激活通知检查 App 是否出现在前台，并检查实际选中的终端 surface 是否与直连客户端的 TTY 对应：
 
 ```bash
 bash scripts/install-app.sh --verify-live-activity "$PWD/.build/handoff-check.json"

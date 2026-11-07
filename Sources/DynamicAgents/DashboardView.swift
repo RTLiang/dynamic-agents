@@ -20,6 +20,8 @@ struct DashboardView: View {
             .sorted(using: sortOrder)
     }
 
+    private var selectedIsHookSession: Bool { store.agents.first { $0.id == selection }?.isHookSession == true }
+
     var body: some View {
         VStack(spacing: 0) {
             Table(visibleAgents, selection: $selection, sortOrder: $sortOrder) {
@@ -39,7 +41,7 @@ struct DashboardView: View {
             .tableStyle(.inset(alternatesRowBackgrounds: true))
             .accessibilityIdentifier("agents-table")
             .contextMenu(forSelectionType: String.self) { ids in
-                Button(L10n.text("Open in Terminal")) { openAgent(ids.first) }
+                Button(L10n.text("Open Agent")) { openAgent(ids.first) }
                     .disabled(ids.isEmpty || !store.connected || store.focusingID != nil)
             } primaryAction: { ids in
                 openAgent(ids.first)
@@ -71,7 +73,7 @@ struct DashboardView: View {
                 Text(L10n.format("agent.count", Int64(visibleAgents.count)))
                 if !store.connected { Text(L10n.text("· Status may be out of date")) }
                 Spacer()
-                Text(store.connected ? L10n.text("herdr connected") : L10n.text("herdr disconnected"))
+                Text(store.herdrConnected ? L10n.text("herdr connected") : store.connected ? L10n.text("Desktop hooks active") : L10n.text("herdr disconnected"))
             }
             .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 8)
         }
@@ -87,12 +89,12 @@ struct DashboardView: View {
                 }.pickerStyle(.menu)
             }
             ToolbarItem {
-                Button(L10n.text("Open Terminal"), systemImage: "terminal") {
+                Button(selectedIsHookSession ? L10n.text("Open Agent") : L10n.text("Open Terminal"), systemImage: selectedIsHookSession ? "arrow.up.forward.app" : "terminal") {
                     if let selection { openAgent(selection) }
                     else { Task { await store.openTerminal() } }
                 }
-                .disabled(!store.connected || store.focusingID != nil)
-                .help(selection == nil ? L10n.text("Open the connected terminal") : L10n.text("Open the selected agent in Terminal"))
+                .disabled(store.focusingID != nil || (selection == nil ? !store.herdrConnected : !store.connected))
+                .help(selectedIsHookSession ? L10n.text("Open Agent") : selection == nil ? L10n.text("Open the connected terminal") : L10n.text("Open the selected agent in Terminal"))
                 .keyboardShortcut(.return, modifiers: .command)
             }
             ToolbarItem {

@@ -1,9 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 if [[ -n "${VERIFY_HERDR_TRACE:-}" ]]; then printf '%s\n' "$*" >> "$VERIFY_HERDR_TRACE"; fi
+if [[ "${1:-}" == "--session" && "${2:-}" == "default" ]]; then shift 2; fi
 if [[ "$*" == "api snapshot" ]]; then
   printf '%s\n' '{"result":{"snapshot":{"version":"0.9.5","focused_pane_id":"w1:p1","workspaces":[{"workspace_id":"w1","label":"Example"}],"agents":[{"pane_id":"w1:p1","terminal_id":"term-example-1","workspace_id":"w1","agent":"codex","name":"Build example","agent_status":"working"},{"pane_id":"w1:p2","terminal_id":"term-example-2","workspace_id":"w1","agent":"claude","name":"Review example","agent_status":"idle"}]}}}'
+elif [[ "$*" == "status --json" && -n "${VERIFY_HERDR_SOCKET:-}" ]]; then
+  python3 -c 'import json,os; print(json.dumps({"server":{"running":True,"socket":os.environ["VERIFY_HERDR_SOCKET"]}}))'
 else
-  printf '%s\n' 'Fixture permits only api snapshot; terminal focus requires a dedicated real herdr session.' >&2
+  printf '%s\n' 'Fixture permits api snapshot and status --json; terminal focus requires a dedicated real herdr session.' >&2
   exit 2
 fi

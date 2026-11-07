@@ -2,7 +2,7 @@
 import AppIntents
 
 struct FocusAgentIntent: AppIntent {
-    static let title: LocalizedStringResource = "Open Agent in Terminal"
+    static let title: LocalizedStringResource = "Open Agent"
     static let supportedModes: IntentModes = .background
     static let allowedExecutionTargets: IntentExecutionTargets = .main
     static let isDiscoverable = false

@@ -9,6 +9,11 @@ final class TerminalController {
     private(set) var detected: TerminalResolution = .unavailable
     private(set) var applications: [TerminalApplication] = []
     private(set) var isDetecting = false
+    private(set) var clients: [TerminalClient] = []
+    var preferredClientID: String {
+        get { UserDefaults.standard.string(forKey: "terminalClientID") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "terminalClientID") }
+    }
     private var revision = 0
     private var discoveryError: String?
     private var chosenApplications: [String: TerminalApplication] = [:]
@@ -18,6 +23,7 @@ final class TerminalController {
         let request = revision
         isDetecting = true
         let processes: [ProcessRecord]
+        async let endpoint = try? HerdrClient(executable: executable, session: session).socketPath()
         do {
             processes = try await Task.detached(priority: .utility) {
                 try await ProcessInventory.capture(herdrExecutable: executable)
@@ -25,10 +31,12 @@ final class TerminalController {
         } catch {
             guard request == revision else { return }
             detected = .unavailable
+            clients = []
             discoveryError = error.localizedDescription
             isDetecting = false
             return
         }
+        let socketPath = await endpoint
         guard request == revision else { return }
         defer { isDetecting = false }
         discoveryError = nil
@@ -37,7 +45,8 @@ final class TerminalController {
                   let bundleID = app.bundleIdentifier, let url = app.bundleURL else { return nil }
             return TerminalApplication(pid: app.processIdentifier, bundleID: bundleID, name: app.localizedName ?? url.deletingPathExtension().lastPathComponent, path: url.path)
         }
-        detected = TerminalResolver.resolve(processes: processes, applications: running, session: session)
+        clients = TerminalResolver.resolveClients(processes: processes, applications: running, session: session, socketPath: socketPath)
+        detected = TerminalResolver.resolve(processes: processes, applications: running, session: session, socketPath: socketPath)
         var options: [TerminalApplication] = []
         switch detected {
         case .resolved(let app): options = [app]
@@ -74,30 +83,88 @@ final class TerminalController {
         }
     }
 
-    @discardableResult
-    func activate(preferredBundleID: String) async throws -> TerminalApplication {
-        let app: TerminalApplication
-        switch resolution(preferredBundleID: preferredBundleID) {
-        case .resolved(let resolved): app = resolved
-        case .ambiguous: throw HerdrError.message(L10n.text("Multiple terminals are connected to this session. Choose one in settings."))
-        case .unavailable:
-            throw HerdrError.message(preferredBundleID.isEmpty ? L10n.text("No terminal found for this session. Open herdr in a terminal and try again.") : L10n.text("The selected terminal app was not found. Choose it again in settings."))
+    struct FocusTarget {
+        let client: TerminalClient
+        let surface: TerminalSurface
+        let policy: TerminalFocusPolicy
+    }
+
+    func prepareFocus(paneID: String, preferredBundleID: String) throws -> FocusTarget {
+        let client = try selectClient(paneID: paneID, preferredBundleID: preferredBundleID)
+        let surfaces = try TerminalAutomation.surfaces(in: client.application)
+        let surface = try TerminalSurfaceResolver.surface(for: client, surfaces: surfaces)
+        return FocusTarget(client: client, surface: surface, policy: TerminalFocusPolicy.resolve(client: client, paneID: paneID))
+    }
+
+    func present(_ target: FocusTarget, paneID: String, executable: String, session: String) throws {
+        if let app = NSRunningApplication(processIdentifier: target.client.application.pid) { NSApp.yieldActivation(to: app) }
+        if target.policy == .dedicatedAttachment {
+            try TerminalAutomation.attach(paneID: paneID, executable: executable, session: session, in: target.surface, application: target.client.application)
+        } else {
+            try TerminalAutomation.focus(target.surface, application: target.client.application)
         }
-        if app.pid > 0, let running = NSRunningApplication(processIdentifier: app.pid), !running.isTerminated, running.bundleIdentifier == app.bundleID {
-            running.unhide()
-            NSApp.yieldActivation(to: running)
-            guard running.activate(options: [.activateAllWindows]) else {
-                throw HerdrError.message(L10n.format("macOS could not activate %@. Try again.", app.name))
+    }
+
+    func attachmentIsFocused(paneID: String, preferredBundleID: String) throws -> Bool {
+        let client = try selectClient(paneID: paneID, preferredBundleID: preferredBundleID)
+        guard client.attachedPaneID == paneID else { return false }
+        let surface = try TerminalSurfaceResolver.surface(for: client, surfaces: TerminalAutomation.surfaces(in: client.application))
+        return try TerminalAutomation.focusedSurfaceID(in: client.application) == surface.id
+    }
+
+    private func selectClient(paneID: String?, preferredBundleID: String) throws -> TerminalClient {
+        let candidates = clients.filter { preferredBundleID.isEmpty || $0.application.bundleID == preferredBundleID }
+        if let paneID {
+            let attached = candidates.filter { $0.attachedPaneID == paneID }
+            if attached.count == 1 { return attached[0] }
+            if let selected = attached.first(where: { $0.id == preferredClientID }) { return selected }
+            if attached.count > 1 { throw HerdrError.message(L10n.text("Select the exact herdr window in settings; no other window will be changed.")) }
+        }
+        if !preferredClientID.isEmpty {
+            guard let selected = candidates.first(where: { $0.id == preferredClientID }) else {
+                throw HerdrError.message(L10n.text("The selected herdr window has closed. Select its replacement in settings."))
             }
-            return app
+            return selected
         }
-        guard !preferredBundleID.isEmpty else {
-            throw HerdrError.message(L10n.text("The detected terminal has quit. Open herdr again and retry."))
+        let normal = candidates.filter { $0.attachedPaneID == nil }
+        if normal.count == 1 { return normal[0] }
+        if candidates.count == 1 { return candidates[0] }
+        throw HerdrError.message(L10n.text("Select the exact herdr window in settings; no other window will be changed."))
+    }
+
+    @discardableResult
+    func activate(preferredBundleID: String, paneID: String? = nil) async throws -> TerminalApplication {
+        let client = try selectClient(paneID: paneID, preferredBundleID: preferredBundleID)
+        let surface = try TerminalSurfaceResolver.surface(for: client, surfaces: TerminalAutomation.surfaces(in: client.application))
+        if let app = NSRunningApplication(processIdentifier: client.application.pid) { NSApp.yieldActivation(to: app) }
+        try TerminalAutomation.focus(surface, application: client.application)
+        return client.application
+    }
+
+    static func isTerminal(_ bundleID: String) -> Bool { knownTerminals.contains(bundleID) }
+
+    func activateHook(_ event: DesktopHookEvent, host: NSRunningApplication) async throws {
+        let records = try await ProcessInventory.capture(herdrExecutable: HerdrClient.defaultExecutable)
+        let byPID = Dictionary(records.map { ($0.pid, $0) }, uniquingKeysWith: { first, _ in first })
+        let record = event.ancestorPIDs.compactMap { byPID[$0] }.first { candidate in
+            guard candidate.tty != nil, let started = ProcessInventory.startedAt(pid: candidate.pid), started.timeIntervalSince1970 <= event.timestamp else { return false }
+            var parent = candidate.parentPID
+            var visited = Set<Int32>()
+            while parent > 1, visited.insert(parent).inserted {
+                if parent == host.processIdentifier { return true }
+                guard let next = byPID[parent] else { break }
+                parent = next.parentPID
+            }
+            return false
         }
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = true
-        _ = try await NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: app.path), configuration: configuration)
-        return app
+        guard !host.isTerminated, let record, let bundle = host.bundleIdentifier, let path = host.bundleURL?.path else {
+            throw HerdrError.message(L10n.text("The hook session’s terminal window is no longer available."))
+        }
+        let app = TerminalApplication(pid: host.processIdentifier, bundleID: bundle, name: host.localizedName ?? bundle, path: path)
+        let client = TerminalClient(application: app, processID: record.pid, tty: record.tty, session: "desktop", attachedPaneID: nil)
+        let surface = try TerminalSurfaceResolver.surface(for: client, surfaces: TerminalAutomation.surfaces(in: app))
+        NSApp.yieldActivation(to: host)
+        try TerminalAutomation.focus(surface, application: app)
     }
 
     func addApplication(at url: URL) -> String? {
