@@ -5,10 +5,32 @@ import AgentCore
 
 struct IntegrationManagementView: View {
     let client: HerdrClient
+    @State private var desktopSelected = false
+
     var body: some View {
-        TabView {
-            AgentIntegrationsView(client: client).tabItem { Text("herdr") }
-            DesktopHooksView().tabItem { Text(L10n.text("Desktop Clients")) }
+        VStack(spacing: 0) {
+            Picker(L10n.text("Agent Integrations"), selection: $desktopSelected) {
+                Text("herdr").tag(false)
+                Text(L10n.text("Desktop Clients")).tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 360)
+            .padding(.vertical, 12)
+            .accessibilityIdentifier("integration-source-picker")
+            Divider()
+            ZStack {
+                AgentIntegrationsView(client: client)
+                    .opacity(desktopSelected ? 0 : 1)
+                    .allowsHitTesting(!desktopSelected)
+                    .disabled(desktopSelected)
+                    .accessibilityHidden(desktopSelected)
+                DesktopHooksView()
+                    .opacity(desktopSelected ? 1 : 0)
+                    .allowsHitTesting(desktopSelected)
+                    .disabled(!desktopSelected)
+                    .accessibilityHidden(!desktopSelected)
+            }
         }
     }
 }
