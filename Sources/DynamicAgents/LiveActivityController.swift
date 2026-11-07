@@ -6,7 +6,14 @@ import AgentCore
 @preconcurrency import ActivityKit
 #endif
 
-#if ACTIVITY_SERVICE
+struct LiveActivitySnapshot {
+    let authorized: Bool
+    let activityID: String?
+    let activeCount: Int
+    let state: AgentActivityState?
+    let staleDate: Date?
+}
+
 @Observable @MainActor
 final class LiveActivityController {
     private(set) var isEnabled = false
@@ -137,12 +144,12 @@ final class LiveActivityController {
         await finish()
     }
 
-    func serviceStatus(id: String) -> AgentActivityServiceReply {
+    var status: LiveActivitySnapshot? {
         #if NATIVE_LIVE_ACTIVITIES
         let activities = Activity<AgentActivityAttributes>.activities.filter { $0.activityState == .active || $0.activityState == .stale }
-        return AgentActivityServiceReply(id: id, enabled: isEnabled, running: isRunning, authorized: ActivityAuthorizationInfo().areActivitiesEnabled, activityID: activity?.id, activeCount: activities.count, state: activity?.content.state, staleDate: activity?.content.staleDate, message: message)
+        return LiveActivitySnapshot(authorized: ActivityAuthorizationInfo().areActivitiesEnabled, activityID: activity?.id, activeCount: activities.count, state: activity?.content.state, staleDate: activity?.content.staleDate)
         #else
-        return AgentActivityServiceReply(id: id, enabled: false, running: false, authorized: false, activityID: nil, activeCount: 0, state: nil, staleDate: nil, message: message)
+        return nil
         #endif
     }
 
@@ -156,4 +163,3 @@ final class LiveActivityController {
         #endif
     }
 }
-#endif

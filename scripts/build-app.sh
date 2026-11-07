@@ -42,6 +42,11 @@ if [[ "$mode" == "native" ]]; then
   xcodebuild -project DynamicAgents.xcodeproj -scheme DynamicAgents \
     -configuration Release -derivedDataPath .build/xcode \
     ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+  legacy_helper=".build/xcode/Build/Products/Release/DynamicAgents.app/Contents/Helpers/DynamicAgentsHandoff.app"
+  if [[ -d "$legacy_helper" ]]; then
+    [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$legacy_helper/Contents/Info.plist")" == "dev.local.dynamicagents.handoff" ]]
+    trash "$legacy_helper"
+  fi
   destination="dist/DynamicAgents.app"
   if [[ -e "$destination" ]]; then trash "$destination"; fi
   ditto .build/xcode/Build/Products/Release/DynamicAgents.app "$destination"
@@ -72,12 +77,9 @@ stamp_version() {
 stamp_version "$destination/Contents/Info.plist"
 signing_identity="${APP_SIGNING_IDENTITY:--}"
 if [[ "$mode" == "native" ]]; then
-  extension="$destination/Contents/Helpers/DynamicAgentsHandoff.app/Contents/PlugIns/DynamicAgentsWidgets.appex"
+  extension="$destination/Contents/PlugIns/DynamicAgentsWidgets.appex"
   stamp_version "$extension/Contents/Info.plist"
   codesign --force --sign "$signing_identity" --entitlements Resources/Widget.entitlements "$extension"
-  helper="$destination/Contents/Helpers/DynamicAgentsHandoff.app"
-  stamp_version "$helper/Contents/Info.plist"
-  codesign --force --sign "$signing_identity" "$helper"
 fi
 codesign --force --sign "$signing_identity" --entitlements Resources/App.entitlements "$destination"
 codesign --verify --deep --strict "$destination"

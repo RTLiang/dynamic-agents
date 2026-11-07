@@ -6,7 +6,7 @@
 - [Bring Live Activities to Mac](https://developer.apple.com/videos/play/tech-talks/111467/) 介绍系统展示及交互。
 - [Displaying live data with Live Activities](https://developer.apple.com/documentation/activitykit/displaying-live-data-with-live-activities) 介绍更新、生命周期和载荷限制。
 - [SwiftUI Link](https://developer.apple.com/documentation/swiftui/link) 提供系统活动行链接；后台转交使用内嵌 URL 辅助 App 与 `NSWorkspace.OpenConfiguration.activates = false`。
-- [App Intent 主进程执行目标](https://developer.apple.com/documentation/appintents/intentexecutiontargets/main)用于共用动作定义；元数据存在不等于系统扩展分发成功，详见 [后台跳转](BACKGROUND-HANDOFF.md)。
+- [App Intent 执行目标](https://developer.apple.com/documentation/appintents/intentexecutiontargets/widgetkitextension)明确让活动行在 Widget 扩展中后台执行；通过有界转交请求定位已有页面，详见 [后台跳转](BACKGROUND-HANDOFF.md)。
 
 ## herdr
 

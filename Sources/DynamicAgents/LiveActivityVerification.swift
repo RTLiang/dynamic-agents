@@ -40,7 +40,6 @@ enum LiveActivityVerification {
             for _ in 0..<20 {
                 if verifier.status?.state == updated && (verifier.status?.staleDate ?? .distantPast) > beforeUpdate.addingTimeInterval(80) { break }
                 try await Task.sleep(for: .milliseconds(100))
-                await verifier.refreshStatus()
             }
             report["updated"] = verifier.status?.state == updated && (verifier.status?.staleDate ?? .distantPast) > beforeUpdate.addingTimeInterval(80)
             report["observedStaleDate"] = verifier.status?.staleDate?.timeIntervalSince1970

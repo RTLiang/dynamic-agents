@@ -1,4 +1,5 @@
 #if NATIVE_LIVE_ACTIVITIES
+import AppIntents
 import SwiftUI
 
 struct ActivityPanel: View {
@@ -24,7 +25,7 @@ struct AgentActivityContentView: View {
                     .padding(.bottom, 4)
             }
             ForEach(state.items) { agent in
-                Link(destination: AgentHandoff.url(for: agent.id)) {
+                Button(intent: FocusAgentIntent(paneID: agent.id)) {
                     HStack(spacing: 12) {
                         Text(agent.title)
                             .font(.system(size: 15, weight: .medium))

@@ -9,7 +9,7 @@ macOS SwiftUI 应用，通过 [herdr](https://herdr.dev/) 查看 coding agent �
 - 独立的桌面 Hook 通道接收 Claude Code Desktop、Codex App、Cursor 和 VS Code Copilot 本机编程会话事件，支持 herdr 之外的会话。按需安装，不自动改写客户端配置。
 - Codex 会话有可用标题时优先显示标题，并同步改名；没有标题时回退为 agent 类型与会话短码。
 - 主窗口提供搜索、状态筛选、排序和终端定位；按 herdr session、客户端 PID 和 TTY 区分同一终端 App 的多个窗口，无需手动填写 Bundle ID。通过选定客户端内的导航器选择已有 agent 页面，重复点击复用同一页面。
-- 使用 ActivityKit 和 WidgetKit 展示系统实时活动。收起时显示运行和完成数量，展开时逐条显示会话；点击会话通过无界面的系统 URL 辅助进程在后台转交，定位已有终端或桌面宿主 App。
+- 使用 ActivityKit 和 WidgetKit 展示系统实时活动。收起时显示运行和完成数量，展开时逐条显示会话；点击会话由 Widget 内的后台 App Intent 直接转交主 App，定位已有终端或桌面宿主；不唤起额外辅助 App。
 - 实时活动只包含运行中的 agent 和最近完成的 agent。完成后保留时间可在设置中调整为 **1–1440 分钟**，默认 10 分钟；没有符合条件的 agent 时自动隐藏。
 - 菜单栏图标可单独隐藏，App 和实时活动继续运行。可从 Dock 重新打开主窗口，并在设置中恢复图标。
 - 支持 English 和简体中文，跟随系统或 macOS 的单应用语言设置。
@@ -70,9 +70,8 @@ HERDR_LIVE_TEST=1 swift test --build-system native
 ## 结构
 
 - `Sources/AgentCore/`：herdr 协议、终端发现、状态、活动载荷和本地化资源。
-- `Sources/DynamicAgents/`：SwiftUI 主程序、活动服务通信和后台动作。
-- `HandoffHelper/`：持有系统活动、包含 Widget 的无窗口宿主及链接转交。
-- `WidgetExtension/`：WidgetKit 和系统实时活动视图。
+- `Sources/DynamicAgents/`：SwiftUI 主程序、活动生命周期和后台动作。
+- `WidgetExtension/`：WidgetKit 实时活动视图及 Widget 内的后台点击转交。
 - `Tests/AgentCoreTests/`：核心模型及集成测试。
 - `scripts/`：构建、安装、项目生成与检查。
 

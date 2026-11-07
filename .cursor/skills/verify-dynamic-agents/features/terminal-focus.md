@@ -11,9 +11,9 @@ Use an unlocked GUI, a supported terminal, Automation and Accessibility authoriz
 1. Capture each client's PID, creation time, TTY, session, native window/surface and current pane. Prefer a unique ordinary herdr client in Automatic mode; manually selected clients remain authoritative.
 2. In each of Ghostty, iTerm2 and Apple Terminal, create two owned clients of one disposable session. Select a different pane in the chosen client through the dashboard. Verify its navigator reports the target pane and the other client retains its page.
 3. Repeat the action. Require identical before/after terminal surface sets and the same selected page; no new window, tab or attachment process should appear.
-4. Repeat through the menu and a real system activity row. For system actions record URL-helper acknowledgement, target app/surface, and zero main-app activations. Label AXPress and actual pointer clicks separately. For pointer tests verify the topmost hit element belongs to the visible activity; cached closed-popover coordinates are insufficient.
+4. Repeat through the menu and a real system activity row. For system actions record the Widget Intent acknowledgement, target app/surface, zero main-app activations and no auxiliary App or Dock item. Label AXPress and actual pointer clicks separately. For pointer tests verify the topmost hit element belongs to the visible activity; cached closed-popover coordinates are insufficient.
 5. Select another client, a different session and a closed client in turn. Require the manual anchor and session scope to hold. A stale activity cannot select a same-named pane in another session. An attachment to a different agent must return an error instead of receiving navigation keys.
-6. Exercise the App running and not running. The URL helper must wake the installed main app in the background and exit after an acknowledged result.
+6. Exercise the App running and not running. The Widget Intent must wake the installed main app in the background and receive acknowledgement without activating either an auxiliary App or the dashboard.
 
 Capture before/action/after independently. Keep PID/TTY, navigation text, app activation traces and native surface sets under ignored `.build/`. A global server `focused_pane_id` is isolation evidence only; it does not prove a client's selected page.
 

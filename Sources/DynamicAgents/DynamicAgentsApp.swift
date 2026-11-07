@@ -130,8 +130,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func sleeping() { store?.setSleeping(true) }
     @objc private func waking() { store?.setSleeping(false) }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        store?.liveActivity.finishForTermination()
-        return .terminateNow
+        guard let store, store.liveActivity.isEnabled || store.liveActivity.isRunning || store.liveActivity.isStarting else { return .terminateNow }
+        Task {
+            await store.liveActivity.finish()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
