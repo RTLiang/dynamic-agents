@@ -31,6 +31,9 @@ struct ConnectionSettings: View {
                     LabeledContent(L10n.text("Show Completed For")) {
                         HStack {
                             TextField(L10n.text("Minutes"), value: $completionMinutes, format: .number)
+                                .labelsHidden()
+                                .textFieldStyle(.roundedBorder)
+                                .multilineTextAlignment(.trailing)
                                 .frame(width: 64)
                                 .accessibilityLabel(L10n.text("Minutes"))
                                 .accessibilityIdentifier("completion-window-minutes")
@@ -38,6 +41,7 @@ struct ConnectionSettings: View {
                             Stepper(L10n.text("Show Completed For"), value: $completionMinutes, in: 1...1440)
                                 .labelsHidden()
                         }
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                 }
                 Section(L10n.text("Updates")) {
