@@ -69,6 +69,109 @@ class DesktopHooks(unittest.TestCase):
         result = self.run_hook("report", "cursor", "beforeSubmitPrompt", payload=payload)
         self.assertEqual(json.loads(result.stdout), {"continue": True})
 
+    def test_codex_memory_metadata_is_not_reported_as_an_active_session(self):
+        transcript = self.directory / "memory.jsonl"
+        transcript.write_text(json.dumps({"type": "session_meta", "payload": {
+            "id": "memory-example", "source": {"subagent": "memory_consolidation"}
+        }}) + "\n")
+        self.run_hook("report", "codex", "Stop", payload={
+            "session_id": "memory-example", "transcript_path": str(transcript)
+        })
+        active = [json.loads(path.read_text()) for path in (self.directory / "data/events").glob("*.json")]
+        self.assertFalse([event for event in active if event["status"] != "ended"],
+                         "Codex memory consolidation was counted as a completed coding session")
+
+    def test_codex_background_sources_are_excluded_without_agent_id(self):
+        sources = [
+            {"source": {"subagent": "memory_consolidation"}},
+            {"source": {"internal": "memory_consolidation"}},
+            {"source": {"internal": "guardian"}},
+            {"source": {"subagent": {"thread_spawn": {"parent_thread_id": "parent", "depth": 1}}}},
+            *[{"source": "vscode", "thread_source": kind} for kind in
+              ("memory_consolidation", "memgen", "memory", "thread_title", "guardian_review")],
+        ]
+        for index, source in enumerate(sources):
+            with self.subTest(source=source):
+                session = "background-" + str(index)
+                transcript = self.directory / (session + ".jsonl")
+                transcript.write_text(json.dumps({"type": "session_meta", "payload": {"id": session, **source}}) + "\n")
+                for event in ("UserPromptSubmit", "Stop"):
+                    self.run_hook("report", "codex", event, payload={"session_id": session, "transcript_path": str(transcript)})
+                # A sparse later event must not restore a known background thread.
+                self.run_hook("report", "codex", "Stop", payload={"session_id": session})
+        records = [json.loads(path.read_text()) for path in (self.directory / "data/events").glob("*.json")]
+        self.assertTrue(records)
+        self.assertTrue(all(row["status"] == "ended" for row in records))
+
+    def test_codex_user_sessions_with_memory_in_their_text_stay_visible(self):
+        for index, source in enumerate(("cli", "vscode", "exec", "mcp", {"custom": "memory-client"})):
+            session = "user-" + str(index)
+            transcript = self.directory / (session + ".jsonl")
+            transcript.write_text(json.dumps({"type": "session_meta", "payload": {
+                "id": session, "source": source, "thread_source": "user", "cwd": "/private/memory",
+                "base_instructions": {"text": "PRIVATE memory_consolidation instructions"}
+            }}) + "\n" + "PRIVATE TRANSCRIPT CONTENT\n")
+            self.run_hook("report", "codex", "UserPromptSubmit", payload={
+                "session_id": session, "transcript_path": str(transcript), "cwd": "/private/memory",
+                "prompt": "memory_consolidation", "thread_name": "Fix memory consolidation"
+            })
+            self.run_hook("report", "codex", "Stop", payload={"session_id": session})
+        records = [path.read_text() for path in (self.directory / "data/events").glob("*.json")]
+        self.assertEqual(len(records), 5)
+        self.assertTrue(all(json.loads(row)["status"] == "done" for row in records))
+        self.assertTrue(all("PRIVATE" not in row and "transcript_path" not in row and "/private/" not in row for row in records))
+
+    def test_codex_metadata_with_another_id_does_not_end_the_parent(self):
+        self.run_hook("report", "codex", "UserPromptSubmit", payload={"session_id": "parent"})
+        path = next((self.directory / "data/events").glob("*.json"))
+        before = path.read_text()
+        transcript = self.directory / "child.jsonl"
+        transcript.write_text(json.dumps({"type": "session_meta", "payload": {
+            "id": "child", "source": {"internal": "memory_consolidation"}
+        }}) + "\n")
+        self.run_hook("report", "codex", "Stop", payload={"session_id": "parent", "transcript_path": str(transcript)})
+        self.assertEqual(path.read_text(), before)
+
+    def test_codex_metadata_reads_only_a_bounded_regular_file_header(self):
+        header = json.dumps({"type": "session_meta", "payload": {
+            "id": "unavailable", "source": {"internal": "memory_consolidation"}
+        }})
+        target = self.directory / "target.jsonl"
+        target.write_text(header + "\n")
+        symlink = self.directory / "symlink.jsonl"
+        symlink.symlink_to(target)
+        fifo = self.directory / "fifo"
+        os.mkfifo(fifo)
+        oversized = self.directory / "oversized.jsonl"
+        oversized.write_text(header[:-1] + ', "padding": "' + "x" * 262_144 + '"}\n')
+        later = self.directory / "later.jsonl"
+        later.write_text('{"type": "response_item", "payload": {}}\n' + header + "\n")
+        malformed = self.directory / "malformed.jsonl"
+        malformed.write_text("not JSON\n")
+        for path in (symlink, fifo, oversized, later, malformed, self.directory / "missing.jsonl"):
+            with self.subTest(path=path.name):
+                self.run_hook("report", "codex", "UserPromptSubmit", payload={
+                    "session_id": "unavailable", "transcript_path": str(path)
+                })
+                event = json.loads(next((self.directory / "data/events").glob("*.json")).read_text())
+                self.assertEqual(event["status"], "working")
+                self.assertNotIn("codexSessionKind", event)
+
+    def test_codex_helper_update_hides_matching_legacy_background_reports(self):
+        sessions = [("00000000-0000-0000-0000-000000000001", {"internal": "memory_consolidation"}),
+                    ("00000000-0000-0000-0000-000000000002", "vscode")]
+        for session, source in sessions:
+            self.run_hook("report", "codex", "Stop", payload={"session_id": session, "cwd": "/private/memory"})
+            transcript = self.directory / "config/.codex/sessions/2026/11/07" / ("rollout-fixture-" + session + ".jsonl")
+            transcript.parent.mkdir(parents=True, exist_ok=True)
+            transcript.write_text(json.dumps({"type": "session_meta", "payload": {"id": session, "source": source}}) + "\n")
+        self.run_hook("install", "codex")
+        records = [json.loads(path.read_text()) for path in (self.directory / "data/events").glob("*.json")]
+        self.assertEqual(sorted(row["status"] for row in records), ["done", "ended"])
+        self.run_hook("report", "codex", "Stop", payload={"session_id": sessions[0][0]})
+        records = [json.loads(path.read_text()) for path in (self.directory / "data/events").glob("*.json")]
+        self.assertEqual(sorted(row["status"] for row in records), ["done", "ended"])
+
     def test_removal_disables_existing_reports(self):
         self.run_hook("install", "codex")
         self.run_hook("report", "codex", "UserPromptSubmit", payload={"session_id": "example"})

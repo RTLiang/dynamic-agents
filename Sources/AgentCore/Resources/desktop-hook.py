@@ -132,6 +132,8 @@ def configure(source, action):
     enabled = json.loads(enabled_path.read_text()) if enabled_path.exists() and not enabled_path.is_symlink() else {}
     enabled[source] = action == "install"
     atomic_json(enabled_path, enabled)
+    if source == "codex" and action == "install":
+        suppress_legacy_codex_background_reports()
     print(json.dumps({"installed": action == "install", "current": action == "install"}))
 
 
@@ -168,6 +170,72 @@ def project_name(source, payload):
     return ", ".join(names)[:120]
 
 
+def codex_metadata(path):
+    if not isinstance(path, str) or not path or len(path) > 4096:
+        return None
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                return None
+            line = handle.readline(262_145)
+        if len(line) > 262_144:
+            return None
+        row = json.loads(line)
+        if not isinstance(row, dict) or row.get("type") != "session_meta":
+            return None
+        metadata = row.get("payload")
+        if not isinstance(metadata, dict) or not isinstance(metadata.get("id"), str):
+            return None
+        source = metadata.get("source")
+        thread_source = metadata.get("thread_source")
+        background = (isinstance(source, dict) and ("subagent" in source or "internal" in source)
+                      or isinstance(source, str) and source in ("memory_consolidation", "memgen", "memory")
+                      or isinstance(thread_source, str) and thread_source not in ("", "user"))
+        return metadata["id"], bool(background)
+    except (OSError, ValueError):
+        return None
+
+
+def suppress_legacy_codex_background_reports():
+    directory = ROOT / "events"
+    reports = {}
+    for path in directory.glob("*.json"):
+        try:
+            info = path.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size >= 8192:
+                continue
+            value = json.loads(path.read_bytes())
+            if isinstance(value, dict) and value.get("source") == "codex" and value.get("status") != "ended":
+                reports[path.stem] = path
+        except (OSError, ValueError):
+            continue
+    if not reports:
+        return
+    sessions = config_path("codex").parent / "sessions"
+    for path in sessions.glob("*/*/*/rollout-*.jsonl"):
+        session = path.stem[-36:]
+        key = hashlib.sha256(("codex:" + session).encode()).hexdigest()
+        if key not in reports or codex_metadata(str(path)) != (session, True):
+            continue
+        report_path = reports[key]
+        lock_path = directory / (key + ".lock")
+        if lock_path.is_symlink():
+            continue
+        try:
+            with lock_path.open("a") as lock:
+                os.chmod(lock_path, 0o600)
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if report_path.is_symlink():
+                    continue
+                value = json.loads(report_path.read_bytes())
+                if isinstance(value, dict) and value.get("id") == key and value.get("source") == "codex":
+                    atomic_json(report_path, {**value, "status": "ended", "codexSessionKind": "background"})
+        except (OSError, ValueError):
+            continue
+
+
 def report(source, event):
     if os.environ.get("HERDR_ENV") == "1":
         return
@@ -183,6 +251,13 @@ def report(source, event):
         session = payload.get("session_id") or payload.get("sessionId")
     if not isinstance(session, str) or not session or len(session) > 256:
         return
+    session_kind = None
+    if source == "codex":
+        metadata = codex_metadata(payload.get("transcript_path"))
+        if metadata is not None:
+            if metadata[0] != session:
+                return
+            session_kind = "background" if metadata[1] else "user"
     if event in ("SessionEnd", "sessionEnd"):
         status = "ended"
     elif event in ("SessionStart", "sessionStart", "Interrupt"):
@@ -223,13 +298,23 @@ def report(source, event):
         old = json.loads(path.read_text()) if path.exists() and not path.is_symlink() else {}
         if int(old.get("sequence", 0)) >= received:
             return
+        if source == "codex":
+            previous_kind = old.get("codexSessionKind")
+            if previous_kind == "background" or session_kind is None and previous_kind == "user":
+                session_kind = previous_kind
+            if session_kind == "background":
+                status = "ended"
         if status == "idle" and old.get("status") in ("working", "blocked") and event in ("SessionStart", "sessionStart"):
             return
         if project is None:
             previous = old.get("project", "")
             project = previous if isinstance(previous, str) else ""
-        atomic_json(path, {"id": key, "source": source, "status": status, "sequence": received,
-                           "timestamp": now, "project": project[:120], "ancestorPIDs": ancestry()})
+        record = {"id": key, "source": source, "status": status, "sequence": received,
+                  "timestamp": now, "project": project[:120],
+                  "ancestorPIDs": [] if session_kind == "background" else ancestry()}
+        if session_kind is not None:
+            record["codexSessionKind"] = session_kind
+        atomic_json(path, record)
 
 
 if __name__ == "__main__":
