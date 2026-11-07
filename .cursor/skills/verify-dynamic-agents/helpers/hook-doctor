@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""Read-only comparison of an app's hook resource, checkout, and installed helper."""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import plistlib
+import sys
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("app", type=Path)
+parser.add_argument("--data-dir", type=Path,
+                    default=Path.home() / "Library/Application Support/DynamicAgents")
+args = parser.parse_args()
+root = Path(__file__).resolve().parents[4]
+expected = root / "Sources/AgentCore/Resources/desktop-hook.py"
+resources = args.app / "Contents/Resources"
+candidates = [resources / "desktop-hook.py",
+              resources / "DynamicAgents_AgentCore.bundle/desktop-hook.py",
+              resources / "DynamicAgents_AgentCore.bundle/Contents/Resources/desktop-hook.py"]
+try:
+    with (args.app / "Contents/Info.plist").open("rb") as handle:
+        info = plistlib.load(handle)
+    bundled = [path for path in candidates if path.is_file() and not path.is_symlink()]
+    if len(bundled) != 1:
+        raise ValueError("Expected exactly one bundled desktop hook resource")
+    bundled_bytes = bundled[0].read_bytes()
+    installed = args.data_dir / "desktop-hook.py"
+    if installed.is_symlink():
+        raise ValueError("Installed helper is a symlink")
+    installed_bytes = installed.read_bytes() if installed.exists() else None
+    matches_checkout = bundled_bytes == expected.read_bytes()
+    matches_installed = installed_bytes is None or installed_bytes == bundled_bytes
+    result = {
+        "bundleID": info.get("CFBundleIdentifier"),
+        "version": info.get("CFBundleShortVersionString"),
+        "build": info.get("CFBundleVersion"),
+        "bundledSHA256": hashlib.sha256(bundled_bytes).hexdigest(),
+        "bundledMatchesCheckout": matches_checkout,
+        "installedHelperPresent": installed_bytes is not None,
+        "installedMatchesBundle": None if installed_bytes is None else matches_installed,
+        "passed": matches_checkout and matches_installed,
+    }
+    print(json.dumps(result, indent=2))
+    if not result["passed"]:
+        print("FAIL: app/helper content differs; establish which build is intended before pressing Update.", file=sys.stderr)
+        sys.exit(1)
+except (OSError, ValueError, plistlib.InvalidFileException) as error:
+    print("FAIL: " + str(error), file=sys.stderr)
+    sys.exit(1)

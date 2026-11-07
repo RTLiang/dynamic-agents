@@ -5,7 +5,7 @@ helpers="$root/.cursor/skills/verify-dynamic-agents/helpers"
 action="${1:-}"
 run="${2:-}"
 if [[ ! "$run" =~ ^[a-z0-9]{1,32}$ ]]; then
-  echo 'Usage: control <launch|doctor|snapshot|duration|integrations|desktop-hooks|menu|press|set|type|cleanup> <lowercase-alphanumeric-run-id> [arguments]' >&2
+  echo 'Usage: control <launch|doctor|snapshot|duration|integrations|desktop-hooks|desktop-memory|menu|press|set|type|cleanup> <lowercase-alphanumeric-run-id> [arguments]' >&2
   exit 2
 fi
 scratch="$root/.build/verify-dynamic-agents/$run"
@@ -83,11 +83,35 @@ case "$action" in
     "$0" doctor "$run" | tee "$evidence/doctor.txt"
     echo "Evidence: $evidence"
     ;;
-  doctor|snapshot|duration|integrations|desktop-hooks|menu|press|set|type)
+  doctor|snapshot|duration|integrations|desktop-hooks|desktop-memory|menu|press|set|type)
     [[ -f "$scratch/pid" && -x "$scratch/ax" ]] || { echo 'Run was not launched.' >&2; exit 1; }
     pid="$(<"$scratch/pid")"
     process_matches "$pid" || { echo 'The recorded verification process is not running.' >&2; exit 1; }
-    "$scratch/ax" "$pid" "$bundle" "$action" "${@:3}"
+    case "$action" in
+      doctor)
+        "$scratch/ax" "$pid" "$bundle" doctor
+        "$helpers/hook-doctor" "$app" --data-dir "$scratch/desktop-data"
+        ;;
+      desktop-hooks|desktop-memory)
+        "$scratch/ax" "$pid" "$bundle" "$action" "$run" "$evidence"
+        "$helpers/hook-doctor" "$app" --data-dir "$scratch/desktop-data" > "$evidence/hook-consistency-after.json"
+        python3 - "$scratch" "$evidence" <<'PY'
+import json
+from pathlib import Path
+import sys
+scratch, evidence = map(Path, sys.argv[1:])
+flags = json.loads((scratch / "desktop-data/sources.json").read_bytes())
+configs = {str(path.relative_to(scratch / "config")): json.loads(path.read_bytes())
+           for path in (scratch / "config").rglob("*.json")}
+result = {"sources": flags, "configs": configs, "passed": bool(flags) and all(value is False for value in flags.values())}
+(evidence / "desktop-config-after.json").write_text(json.dumps(result, indent=2) + "\n")
+if not result["passed"]:
+    sys.exit("FAIL: a desktop source remained enabled after UI removal")
+print("result: owned client configurations archived; all installed sources disabled after removal")
+PY
+        ;;
+      *) "$scratch/ax" "$pid" "$bundle" "$action" "${@:3}" ;;
+    esac
     ;;
   cleanup) cleanup ;;
   *) echo 'Unknown action.' >&2; exit 2 ;;

@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Deliver controlled Codex lifecycle input to the UI-installed, owned hook."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+
+if len(sys.argv) != 2 or not re.fullmatch(r"[a-z0-9]{1,32}", sys.argv[1]):
+    sys.exit("Usage: desktop-fixture <owned-run-id>")
+root = Path(__file__).resolve().parents[4]
+run = sys.argv[1]
+scratch = root / ".build/verify-dynamic-agents" / run
+evidence = root / ".build/verify-dynamic-agents-evidence" / run
+if scratch.is_symlink() or not scratch.is_dir() or not evidence.is_dir():
+    sys.exit("FAIL: launch an owned run first")
+if (scratch / "bundle-id").read_text().strip() != "dev.local.dynamicagents.verify" + run:
+    sys.exit("FAIL: wrong scratch ownership marker")
+data = scratch / "desktop-data"
+config = scratch / "config"
+helper = data / "desktop-hook.py"
+expected = root / "Sources/AgentCore/Resources/desktop-hook.py"
+if helper.is_symlink() or helper.read_bytes() != expected.read_bytes():
+    sys.exit("FAIL: UI-installed helper differs from this checkout")
+
+environment = dict(os.environ, DYNAMIC_AGENTS_DATA_DIR=str(data),
+                   DYNAMIC_AGENTS_CONFIG_HOME=str(config))
+environment.pop("HERDR_ENV", None)
+sessions = [
+    ("00000000-0000-4000-8000-000000000001", "Memory project example", "vscode", "user"),
+    ("00000000-0000-4000-8000-000000000002", "Background memory example", {"internal": "memory_consolidation"}, "background"),
+    ("00000000-0000-4000-8000-000000000003", "Background legacy memory example", {"subagent": "memory_consolidation"}, "background"),
+]
+index = config / ".codex/session_index.jsonl"
+index.parent.mkdir(parents=True, exist_ok=True)
+index.write_text("".join(json.dumps({"id": session, "thread_name": title}) + "\n"
+                         for session, title, _, _ in sessions))
+actions = []
+records = []
+for session, title, source, kind in sessions:
+    transcript = index.parent / "sessions/2026/01/01" / ("rollout-fixture-" + session + ".jsonl")
+    transcript.parent.mkdir(parents=True, exist_ok=True)
+    transcript.write_text(json.dumps({"type": "session_meta", "payload": {
+        "id": session, "source": source
+    }}) + "\n")
+    for event, with_metadata in [("UserPromptSubmit", True), ("Stop", True), ("Stop", False)]:
+        payload = {"session_id": session, "cwd": "/example/memory"}
+        if with_metadata:
+            payload["transcript_path"] = str(transcript)
+        result = subprocess.run([sys.executable, str(helper), "report", "codex", event],
+                                input=json.dumps(payload), text=True, capture_output=True,
+                                env=environment, check=True, timeout=3)
+        if json.loads(result.stdout) != {}:
+            sys.exit("FAIL: hook returned unexpected output")
+        actions.append({"title": title, "event": event, "metadataPresent": with_metadata})
+    key = hashlib.sha256(("codex:" + session).encode()).hexdigest()
+    record = json.loads((data / "events" / (key + ".json")).read_bytes())
+    if record.get("codexSessionKind") != kind or record.get("status") != ("done" if kind == "user" else "ended"):
+        sys.exit("FAIL: wrong lifecycle classification for " + title)
+    records.append(record)
+(evidence / "desktop-memory-inputs.json").write_text(json.dumps(actions, indent=2) + "\n")
+(evidence / "desktop-memory-records.json").write_text(json.dumps(records, indent=2) + "\n")
+print("action: deliver prompt, stop and sparse stop through the UI-installed Codex hook")
+print("result: user completion retained; internal and subagent memory records ended")
+print("PASS: desktop-memory-boundary (dashboard assertion follows in AX)")

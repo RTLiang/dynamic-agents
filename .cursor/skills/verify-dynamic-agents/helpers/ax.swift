@@ -158,7 +158,14 @@ if action == "doctor" {
     press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "integration-remove-codex" }, "Remove Codex")
     expectRow("codex", state: "Not Installed")
     print("PASS: agent-integrations")
-} else if action == "desktop-hooks" {
+} else if action == "desktop-hooks" || action == "desktop-memory" {
+    let memoryJourney = action == "desktop-memory"
+    require(arguments.count == 6, "usage: ax <pid> <bundle-id> <desktop-hooks|desktop-memory> <run-id> <evidence-directory>")
+    let evidence = URL(fileURLWithPath: arguments[5], isDirectory: true)
+    func capture(_ name: String) throws {
+        let data = try JSONSerialization.data(withJSONObject: tree(root), options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: evidence.appendingPathComponent(name + ".json"))
+    }
     _ = app.activate(options: [.activateAllWindows])
     waitFor()
     func press(_ element: AXUIElement?, _ description: String) {
@@ -180,33 +187,85 @@ if action == "doctor" {
         require(false, "desktop hook \(source) never became \(label)")
         exit(1)
     }
-    for source in ["claude", "codex", "cursor", "copilot"] {
+    try capture("desktop-before-install")
+    for source in memoryJourney ? ["codex"] : ["claude", "codex", "cursor", "copilot"] {
         press(expect(source, label: "Install"), "Install \(source) desktop hook")
         _ = expect(source, label: "Remove")
         print("result: \(source) installed")
     }
     guard let appURL = app.bundleURL else { require(false, "fixture app URL missing"); exit(1) }
-    let helper = appURL.deletingLastPathComponent().appendingPathComponent("desktop-data/desktop-hook.py")
+    let scratch = appURL.deletingLastPathComponent()
+    let helper = scratch.appendingPathComponent("desktop-data/desktop-hook.py")
     require(FileManager.default.fileExists(atPath: helper.path), "owned desktop helper missing")
-    let handle = try FileHandle(forWritingTo: helper)
-    try handle.seekToEnd()
-    try handle.write(contentsOf: Data("\n# Previous fixture helper version\n".utf8))
-    try handle.close()
-    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "desktop-hooks-refresh" }, "Refresh outdated desktop helper")
-    _ = expect("codex", label: "Update")
-    _ = expect("codex", label: "Remove")
-    print("result: installed Codex hook offers Update and Remove")
-    press(expect("codex", label: "Update"), "Update Codex desktop helper")
-    for source in ["claude", "codex", "cursor", "copilot"] {
-        _ = expect(source, label: "Remove")
+    if memoryJourney {
+        try capture("desktop-memory-installed")
+        let fixture = Process()
+        let repository = scratch.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        fixture.executableURL = repository.appendingPathComponent(".cursor/skills/verify-dynamic-agents/helpers/desktop-fixture")
+        fixture.arguments = [arguments[4]]
+        fflush(stdout)
+        try fixture.run()
+        fixture.waitUntilExit()
+        require(fixture.terminationStatus == 0, "Codex hook fixture failed")
+        func closeSettings() {
+            press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Done") }, "Done")
+            press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Cancel") }, "Cancel settings")
+        }
+        func expectDashboard(count: Int, hasUser: Bool) {
+            var ready = false
+            for _ in 0..<80 {
+                let user = find(root) { attribute($0, kAXValueAttribute) as? String == "Memory project example" }
+                let countLabel = find(root) { attribute($0, kAXValueAttribute) as? String == "\(count) agents" }
+                ready = countLabel != nil && (user != nil) == hasUser
+                if ready { break }
+                waitFor(0.1)
+            }
+            require(ready, "dashboard did not show \(count) agents with expected user session")
+            for title in ["Background memory example", "Background legacy memory example"] {
+                require(find(root) { attribute($0, kAXValueAttribute) as? String == title } == nil, "background memory appeared in dashboard")
+            }
+            if hasUser {
+                require(find(root) { attribute($0, kAXValueAttribute) as? String == "Completed" } != nil, "normal memory-project completion missing")
+            }
+            print("result: dashboard has \(count) agents; background memory absent; user completion \(hasUser ? "visible" : "removed")")
+        }
+        closeSettings()
+        expectDashboard(count: 3, hasUser: true)
+        try capture("desktop-memory-dashboard")
+        press(find(root) { attribute($0, kAXRoleAttribute) as? String == kAXButtonRole && labels($0).contains("Connection Settings") }, "Connection Settings")
+        press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "manage-agent-integrations" }, "Manage Integrations")
+        press(find(root) { [kAXRadioButtonRole, kAXButtonRole].contains(attribute($0, kAXRoleAttribute) as? String ?? "") && labels($0).contains("Desktop Clients") }, "Desktop Clients")
+        press(expect("codex", label: "Remove"), "Remove Codex desktop hook")
+        _ = expect("codex", label: "Install")
+        closeSettings()
+        expectDashboard(count: 2, hasUser: false)
+        try capture("desktop-memory-removed")
+        print("PASS: desktop-memory")
+    } else {
+        let handle = try FileHandle(forWritingTo: helper)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("\n# Divergent fixture helper content\n".utf8))
+        try handle.close()
+        press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "desktop-hooks-refresh" }, "Refresh divergent desktop helper")
+        _ = expect("codex", label: "Update")
+        _ = expect("codex", label: "Remove")
+        print("result: installed Codex hook offers Update and Remove")
+        try capture("desktop-update-available")
+        press(expect("codex", label: "Update"), "Update Codex desktop helper")
+        for source in ["claude", "codex", "cursor", "copilot"] {
+            _ = expect(source, label: "Remove")
+            require(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "desktop-hook-update-\(source)" } == nil, "Update remained visible for \(source)")
+        }
+        try capture("desktop-after-update")
+        print("result: shared desktop helper updated for all installed sources; Update buttons absent")
+        for source in ["claude", "codex", "cursor", "copilot"] {
+            press(expect(source, label: "Remove"), "Remove \(source) desktop hook")
+            _ = expect(source, label: "Install")
+            print("result: \(source) removed")
+        }
+        try capture("desktop-after-remove")
+        print("PASS: desktop-hooks")
     }
-    print("result: shared desktop helper updated for all installed sources")
-    for source in ["claude", "codex", "cursor", "copilot"] {
-        press(expect(source, label: "Remove"), "Remove \(source) desktop hook")
-        _ = expect(source, label: "Install")
-        print("result: \(source) removed")
-    }
-    print("PASS: desktop-hooks")
 } else if action == "duration" {
     _ = app.activate(options: [.activateAllWindows])
     waitFor()
