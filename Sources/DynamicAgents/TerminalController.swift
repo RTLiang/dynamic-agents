@@ -97,19 +97,25 @@ final class TerminalController {
         return try TerminalClientSelection.target(from: snapshot, surfaces: surfaces, paneID: paneID, preferredBundleID: preferredBundleID, preferredClientID: preference)
     }
 
-    func present(_ target: FocusTarget, paneID: String, executable: String, session: String) throws {
-        if let app = NSRunningApplication(processIdentifier: target.client.application.pid) { NSApp.yieldActivation(to: app) }
-        if target.policy == .dedicatedAttachment {
-            try TerminalAutomation.attach(paneID: paneID, executable: executable, session: session, in: target.surface, application: target.client.application)
-        } else {
-            try TerminalAutomation.focus(target.surface, application: target.client.application)
+    func present(_ target: FocusTarget, paneID: String) async throws {
+        if let app = NSRunningApplication(processIdentifier: target.client.application.pid) {
+            NSApp.yieldActivation(to: app)
+            app.unhide()
+        }
+        try TerminalAutomation.focus(target.surface, application: target.client.application)
+        if target.policy == .existingClient {
+            for _ in 0..<20 {
+                if NSWorkspace.shared.frontmostApplication?.processIdentifier == target.client.application.pid { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            try await HerdrClientNavigation.open(paneID: paneID, target: target)
         }
     }
 
-    func attachmentIsFocused(paneID: String, preferredBundleID: String) throws -> Bool {
+    func agentIsFocused(paneID: String, preferredBundleID: String) async throws -> Bool {
         let target = try selectTarget(paneID: paneID, preferredBundleID: preferredBundleID)
-        guard target.policy == .existingAttachment else { return false }
-        return try TerminalAutomation.focusedSurfaceID(in: target.client.application) == target.surface.id
+        guard try TerminalAutomation.focusedSurfaceID(in: target.client.application) == target.surface.id else { return false }
+        return try await HerdrClientNavigation.currentPane(target: target) == paneID
     }
 
     @discardableResult

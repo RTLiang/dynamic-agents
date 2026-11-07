@@ -33,19 +33,19 @@ def serialize(value, indent=0):
 app_sources = sorted(str(p.relative_to(ROOT)) for directory in ["Sources/AgentCore", "Sources/DynamicAgents"] for p in (ROOT / directory).rglob("*.swift"))
 widget_sources = [
     "Sources/AgentCore/Agent.swift", "Sources/AgentCore/AgentActivityState.swift",
-    "Sources/AgentCore/Localization.swift",
+    "Sources/AgentCore/Localization.swift", "Sources/AgentCore/AgentHandoff.swift",
     "Sources/DynamicAgents/Shared/AgentActivityAttributes.swift",
-    "Sources/DynamicAgents/Shared/FocusAgentIntent.swift",
     "Sources/DynamicAgents/Shared/ActivityPanel.swift",
     "WidgetExtension/AgentLiveActivityWidget.swift",
 ]
-all_files = sorted(set(app_sources + widget_sources + ["Resources/Info.plist", "Resources/Widget-Info.plist", "Resources/App.entitlements", "Resources/Widget.entitlements", "Resources/AppIcon.icon", "Sources/AgentCore/Resources/desktop-hook.py"]))
+helper_sources = ["HandoffHelper/DynamicAgentsHandoff.swift", "Sources/AgentCore/AgentHandoff.swift", "Sources/AgentCore/Localization.swift", "Sources/AgentCore/Agent.swift", "Sources/AgentCore/AgentActivityState.swift", "Sources/AgentCore/AgentActivityService.swift", "Sources/DynamicAgents/Shared/AgentActivityAttributes.swift", "Sources/DynamicAgents/LiveActivityController.swift"]
+all_files = sorted(set(app_sources + widget_sources + helper_sources + ["Resources/Handoff-Info.plist", "Resources/Info.plist", "Resources/Widget-Info.plist", "Resources/App.entitlements", "Resources/Widget.entitlements", "Resources/AppIcon.icon", "Sources/AgentCore/Resources/desktop-hook.py"]))
 for path in all_files:
     file_type = "sourcecode.swift" if path.endswith(".swift") else ("folder.iconcomposer.icon" if path.endswith(".icon") else ("text.script.python" if path.endswith(".py") else "text.plist.xml"))
     obj(path, "PBXFileReference", lastKnownFileType=file_type, path=path, sourceTree="SOURCE_ROOT")
-for name, extension, file_type in [("DynamicAgents", "app", "wrapper.application"), ("DynamicAgentsWidgets", "appex", "wrapper.app-extension")]:
+for name, extension, file_type in [("DynamicAgents", "app", "wrapper.application"), ("DynamicAgentsWidgets", "appex", "wrapper.app-extension"), ("DynamicAgentsHandoff", "app", "wrapper.application")]:
     obj(name + "-product", "PBXFileReference", explicitFileType=file_type, path=name + "." + extension, sourceTree="BUILT_PRODUCTS_DIR")
-obj("products", "PBXGroup", children=[ref("DynamicAgents-product"), ref("DynamicAgentsWidgets-product")], name="Products", sourceTree="<group>")
+obj("products", "PBXGroup", children=[ref("DynamicAgents-product"), ref("DynamicAgentsWidgets-product"), ref("DynamicAgentsHandoff-product")], name="Products", sourceTree="<group>")
 localized_resources = ["Localizable.strings", "Localizable.stringsdict", "InfoPlist.strings"]
 for name in localized_resources:
     children = []
@@ -56,7 +56,7 @@ for name in localized_resources:
     obj(name, "PBXVariantGroup", children=children, name=name, sourceTree="<group>")
 obj("main", "PBXGroup", children=[ref(p) for p in all_files] + [ref(p) for p in localized_resources] + [ref("products")], sourceTree="<group>")
 
-for target, sources in [("DynamicAgents", app_sources), ("DynamicAgentsWidgets", widget_sources)]:
+for target, sources in [("DynamicAgents", app_sources), ("DynamicAgentsWidgets", widget_sources), ("DynamicAgentsHandoff", helper_sources)]:
     for path in sources:
         obj(target + path, "PBXBuildFile", fileRef=ref(path))
     obj(target + "-sources", "PBXSourcesBuildPhase", buildActionMask=2147483647, files=[ref(target + p) for p in sources], runOnlyForDeploymentPostprocessing=0)
@@ -65,9 +65,10 @@ for target, sources in [("DynamicAgents", app_sources), ("DynamicAgentsWidgets",
     for name in localized_resources:
         obj(target + name, "PBXBuildFile", fileRef=ref(name))
         resources.append(ref(target + name))
+    if target != "DynamicAgentsWidgets":
+        obj(target + "-icon-build", "PBXBuildFile", fileRef=ref("Resources/AppIcon.icon"))
+        resources.append(ref(target + "-icon-build"))
     if target == "DynamicAgents":
-        obj("icon-build", "PBXBuildFile", fileRef=ref("Resources/AppIcon.icon"))
-        resources.append(ref("icon-build"))
         obj("desktop-hook-resource", "PBXBuildFile", fileRef=ref("Sources/AgentCore/Resources/desktop-hook.py"))
         resources.append(ref("desktop-hook-resource"))
     obj(target + "-resources", "PBXResourcesBuildPhase", buildActionMask=2147483647, files=resources, runOnlyForDeploymentPostprocessing=0)
@@ -76,26 +77,37 @@ obj("embed-file", "PBXBuildFile", fileRef=ref("DynamicAgentsWidgets-product"), s
 obj("embed", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, dstPath="", dstSubfolderSpec=13, files=[ref("embed-file")], name="Embed App Extensions", runOnlyForDeploymentPostprocessing=0)
 obj("proxy", "PBXContainerItemProxy", containerPortal=ref("project"), proxyType=1, remoteGlobalIDString=ref("DynamicAgentsWidgets"), remoteInfo="DynamicAgentsWidgets")
 obj("dependency", "PBXTargetDependency", target=ref("DynamicAgentsWidgets"), targetProxy=ref("proxy"))
+obj("helper-embed-file", "PBXBuildFile", fileRef=ref("DynamicAgentsHandoff-product"), settings={"ATTRIBUTES": ["RemoveHeadersOnCopy"]})
+obj("helper-embed", "PBXCopyFilesBuildPhase", buildActionMask=2147483647, dstPath="Contents/Helpers", dstSubfolderSpec=1, files=[ref("helper-embed-file")], name="Embed Handoff Helper", runOnlyForDeploymentPostprocessing=0)
+obj("helper-proxy", "PBXContainerItemProxy", containerPortal=ref("project"), proxyType=1, remoteGlobalIDString=ref("DynamicAgentsHandoff"), remoteInfo="DynamicAgentsHandoff")
+obj("helper-dependency", "PBXTargetDependency", target=ref("DynamicAgentsHandoff"), targetProxy=ref("helper-proxy"))
 
-for target in ["DynamicAgents", "DynamicAgentsWidgets"]:
+for target in ["DynamicAgents", "DynamicAgentsWidgets", "DynamicAgentsHandoff"]:
     is_app = target == "DynamicAgents"
+    is_extension = target == "DynamicAgentsWidgets"
     phases = [ref(target + "-sources"), ref(target + "-frameworks"), ref(target + "-resources")]
     if is_app:
+        phases.append(ref("helper-embed"))
+    elif not is_extension:
         phases.append(ref("embed"))
-    obj(target, "PBXNativeTarget", buildConfigurationList=ref(target + "-configs"), buildPhases=phases, buildRules=[], dependencies=[ref("dependency")] if is_app else [], name=target, productName=target, productReference=ref(target + "-product"), productType="com.apple.product-type.application" if is_app else "com.apple.product-type.app-extension")
+    dependencies = [ref("helper-dependency")] if is_app else [] if is_extension else [ref("dependency")]
+    obj(target, "PBXNativeTarget", buildConfigurationList=ref(target + "-configs"), buildPhases=phases, buildRules=[], dependencies=dependencies, name=target, productName=target, productReference=ref(target + "-product"), productType="com.apple.product-type.app-extension" if is_extension else "com.apple.product-type.application")
     settings = {
         "PRODUCT_NAME": target,
-        "PRODUCT_BUNDLE_IDENTIFIER": "dev.local.dynamicagents" + ("" if is_app else ".widgets"),
-        "INFOPLIST_FILE": "Resources/Info.plist" if is_app else "Resources/Widget-Info.plist",
+        "PRODUCT_BUNDLE_IDENTIFIER": "dev.local.dynamicagents" + ("" if is_app else ".handoff.widgets" if is_extension else ".handoff"),
+        "INFOPLIST_FILE": "Resources/Info.plist" if is_app else "Resources/Widget-Info.plist" if is_extension else "Resources/Handoff-Info.plist",
         "GENERATE_INFOPLIST_FILE": "NO", "CODE_SIGN_STYLE": "Automatic",
         "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/../Frameworks"],
         "ENABLE_HARDENED_RUNTIME": "YES",
     }
-    if is_app:
+    if not is_extension:
         settings["ASSETCATALOG_COMPILER_APPICON_NAME"] = "AppIcon"
+    if is_app:
         settings["CODE_SIGN_ENTITLEMENTS"] = "Resources/App.entitlements"
-    if not is_app:
+    if is_extension:
         settings.update({"APPLICATION_EXTENSION_API_ONLY": "YES", "SKIP_INSTALL": "YES", "CODE_SIGN_ENTITLEMENTS": "Resources/Widget.entitlements", "SWIFT_ACTIVE_COMPILATION_CONDITIONS": "$(inherited) WIDGET_EXTENSION"})
+    if not is_app and not is_extension:
+        settings["SWIFT_ACTIVE_COMPILATION_CONDITIONS"] = "$(inherited) ACTIVITY_SERVICE"
     for config in ["Debug", "Release"]:
         obj(target + config, "XCBuildConfiguration", buildSettings=settings, name=config)
     obj(target + "-configs", "XCConfigurationList", buildConfigurations=[ref(target + c) for c in ["Debug", "Release"]], defaultConfigurationIsVisible=0, defaultConfigurationName="Release")
@@ -110,7 +122,7 @@ for config in ["Debug", "Release"]:
     }
     obj("project" + config, "XCBuildConfiguration", buildSettings=settings, name=config)
 obj("project-configs", "XCConfigurationList", buildConfigurations=[ref("project" + c) for c in ["Debug", "Release"]], defaultConfigurationIsVisible=0, defaultConfigurationName="Release")
-obj("project", "PBXProject", attributes={"LastUpgradeCheck": "2730"}, buildConfigurationList=ref("project-configs"), compatibilityVersion="Xcode 14.0", developmentRegion="en", knownRegions=["en", "zh-Hans", "Base"], mainGroup=ref("main"), productRefGroup=ref("products"), projectDirPath="", projectRoot="", targets=[ref("DynamicAgents"), ref("DynamicAgentsWidgets")])
+obj("project", "PBXProject", attributes={"LastUpgradeCheck": "2730"}, buildConfigurationList=ref("project-configs"), compatibilityVersion="Xcode 14.0", developmentRegion="en", knownRegions=["en", "zh-Hans", "Base"], mainGroup=ref("main"), productRefGroup=ref("products"), projectDirPath="", projectRoot="", targets=[ref("DynamicAgents"), ref("DynamicAgentsWidgets"), ref("DynamicAgentsHandoff")])
 project = ROOT / "DynamicAgents.xcodeproj"
 project.mkdir(exist_ok=True)
 (project / "project.pbxproj").write_text("// !$*UTF8*$!\n" + serialize(dict(archiveVersion=1, classes={}, objectVersion=56, objects=objects, rootObject=ref("project"))) + "\n")

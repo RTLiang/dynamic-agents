@@ -14,6 +14,7 @@ final class AgentStore {
     private(set) var lastUpdated: Date?
     private(set) var connectionError: String?
     var actionError: String?
+    private(set) var presentsActionError = true
     var focusingID: String?
     let liveActivity = LiveActivityController()
     let terminal = TerminalController()
@@ -22,7 +23,7 @@ final class AgentStore {
     var session: String { didSet { UserDefaults.standard.set(session, forKey: "herdrSession") } }
     var terminalBundleID: String { didSet { UserDefaults.standard.set(terminalBundleID, forKey: "terminalBundleID") } }
     private var pollTask: Task<Void, Never>?
-    private var refreshing = false
+    private var refreshTask: Task<Void, Never>?
     private var suspended = false
     private var activityFeed = AgentActivityFeed()
     private var herdrAgents: [Agent] = []
@@ -63,10 +64,16 @@ final class AgentStore {
     }
     func setSleeping(_ value: Bool) { suspended = value }
     func refresh() async {
-        guard !refreshing else { return }
-        refreshing = true
+        if let refreshTask { await refreshTask.value; return }
+        let task = Task {
+            defer { self.refreshTask = nil; loading = false }
+            await refreshSnapshot()
+        }
+        refreshTask = task
+        await task.value
+    }
+    private func refreshSnapshot() async {
         let requestClient = client
-        defer { refreshing = false; loading = false }
         do {
             let snapshot = try await requestClient.snapshot()
             guard !Task.isCancelled, requestClient.executable == executable, requestClient.session == session else { return }
@@ -127,13 +134,15 @@ final class AgentStore {
         await refreshTerminals()
     }
     func openTerminal() async {
+        presentsActionError = true
         actionError = nil
         await refreshTerminals()
         do { try await terminal.activate(preferredBundleID: terminalBundleID) }
         catch { actionError = error.localizedDescription }
     }
-    func focus(_ agent: Agent) async {
+    func focus(_ agent: Agent, presentsError: Bool = true) async {
         guard connected, focusingID == nil else { return }
+        presentsActionError = presentsError
         focusingID = agent.id
         actionError = nil
         let requestClient = client
@@ -174,7 +183,7 @@ final class AgentStore {
         do {
             let target = try terminal.prepareFocus(paneID: agent.paneID, preferredBundleID: preferredTerminal)
             guard requestClient.executable == executable, requestClient.session == session else { return }
-            try terminal.present(target, paneID: agent.paneID, executable: requestClient.executable, session: requestClient.session)
+            try await terminal.present(target, paneID: agent.paneID)
         } catch { actionError = error.localizedDescription }
         await refresh()
     }

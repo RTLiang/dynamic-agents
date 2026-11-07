@@ -15,8 +15,6 @@ struct DynamicAgentsApp: App {
         Window("Dynamic Agents", id: "dashboard") {
             DashboardView(store: store)
                 .onAppear {
-                    delegate.store = store
-                    if !ProcessInfo.processInfo.arguments.contains("--verify-live-activity") { store.start() }
                     delegate.verifyLiveActivityIfRequested(store: store)
                 }
                 .task { await updates.check(manual: false) }
@@ -97,6 +95,9 @@ struct AgentMenu: View {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var store: AgentStore?
+    #if NATIVE_LIVE_ACTIVITIES
+    private var handoff: ActivityHandoffReceiver?
+    #endif
     private var verificationStarted = false
     func verifyLiveActivityIfRequested(store: AgentStore) {
         #if NATIVE_LIVE_ACTIVITIES
@@ -112,6 +113,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = ProcessInfo.processInfo.arguments
+        store = AgentStore.shared
+        ProcessInfo.processInfo.disableAutomaticTermination("Monitoring coding agents")
+        #if NATIVE_LIVE_ACTIVITIES
+        handoff = ActivityHandoffReceiver()
+        #endif
+        if !args.contains("--verify-live-activity"), !args.contains("--verify-terminal") { store?.start() }
         if let index = args.firstIndex(of: "--verify-terminal"), args.indices.contains(index + 1) {
             let reportURL = URL(fileURLWithPath: args[index + 1])
             Task { await TerminalVerification.run(reportURL: reportURL) }
@@ -123,12 +130,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func sleeping() { store?.setSleeping(true) }
     @objc private func waking() { store?.setSleeping(false) }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let store, store.liveActivity.isRunning else { return .terminateNow }
-        Task {
-            await store.liveActivity.finish()
-            sender.reply(toApplicationShouldTerminate: true)
-        }
-        return .terminateLater
+        store?.liveActivity.finishForTermination()
+        return .terminateNow
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }

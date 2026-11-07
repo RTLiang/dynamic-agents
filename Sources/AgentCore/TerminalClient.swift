@@ -6,12 +6,16 @@ public struct TerminalClient: Identifiable, Equatable, Sendable {
     public let tty: String?
     public let session: String
     public let attachedPaneID: String?
-    public init(application: TerminalApplication, processID: Int32, tty: String?, session: String, attachedPaneID: String?) {
+    public let configPath: String?
+    public let startedAt: Date?
+    public init(application: TerminalApplication, processID: Int32, tty: String?, session: String, attachedPaneID: String?, configPath: String? = nil, startedAt: Date? = nil) {
         self.application = application
         self.processID = processID
         self.tty = tty
         self.session = session
         self.attachedPaneID = attachedPaneID
+        self.configPath = configPath
+        self.startedAt = startedAt
     }
 
     public var id: String { "\(application.bundleID):\(processID):\(tty ?? "-"):\(session)" }
@@ -31,11 +35,11 @@ public struct TerminalSurface: Equatable, Sendable {
 
 public enum TerminalFocusPolicy: Equatable, Sendable {
     case existingAttachment
-    case dedicatedAttachment
+    case existingClient
 
     public static func resolve(client: TerminalClient, paneID: String) -> Self {
         if client.attachedPaneID == paneID { return .existingAttachment }
-        return .dedicatedAttachment
+        return .existingClient
     }
 }
 

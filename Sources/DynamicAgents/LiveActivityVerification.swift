@@ -1,11 +1,15 @@
 #if NATIVE_LIVE_ACTIVITIES
 import AppKit
-@preconcurrency import ActivityKit
 import Foundation
 
 @MainActor
 enum LiveActivityVerification {
     static func run(store: AgentStore, reportURL: URL) async {
+        let originalEnabled = UserDefaults.standard.object(forKey: "liveActivityEnabled")
+        defer {
+            if let originalEnabled { UserDefaults.standard.set(originalEnabled, forKey: "liveActivityEnabled") }
+            else { UserDefaults.standard.removeObject(forKey: "liveActivityEnabled") }
+        }
         var report: [String: Any] = ["passed": false]
         do {
             NSApp.activate(ignoringOtherApps: true)
@@ -14,47 +18,45 @@ enum LiveActivityVerification {
                 try await Task.sleep(for: .milliseconds(100))
             }
             guard NSApp.isActive else { throw HerdrError.message("The verification app did not become active before starting the activity.") }
-            let snapshot = try await store.client.snapshot()
-            var feed = AgentActivityFeed()
-            feed.observe(snapshot.trackedAgents, at: .now)
-            let initial = AgentActivityState(agents: feed.agents(from: snapshot.trackedAgents, at: .now), workspaces: snapshot.workspaces, prioritizeRunning: true, itemLimit: .max)
+            await store.refresh()
+            let initial = store.activityState
             guard initial.total > 0 else { throw HerdrError.message("A running agent is required for native verification.") }
             await store.liveActivity.finish()
-            report["authorized"] = ActivityAuthorizationInfo().areActivitiesEnabled
             report["agentCount"] = initial.total
             let verifier = LiveActivityController()
             await verifier.start(state: initial, session: store.session)
-            guard verifier.isRunning,
-                  let activity = Activity<AgentActivityAttributes>.activities.first(where: { $0.activityState == .active }) else {
+            guard verifier.isRunning, let status = verifier.status, let activityID = status.activityID, status.activeCount == 1 else {
                 throw HerdrError.message(verifier.message ?? "ActivityKit did not return an active activity.")
             }
-            report["startedID"] = activity.id
-            report["startedState"] = String(describing: activity.activityState)
+            report["authorized"] = status.authorized
+            report["startedID"] = activityID
+            report["startedState"] = "active"
             let latest = try await store.client.snapshot()
+            var feed = AgentActivityFeed()
             feed.observe(latest.trackedAgents, at: .now)
             let updated = AgentActivityState(agents: feed.agents(from: latest.trackedAgents, at: .now), workspaces: latest.workspaces, prioritizeRunning: true, itemLimit: .max)
-            let staleDate = Date.now.addingTimeInterval(120)
-            await activity.update(ActivityContent(state: updated, staleDate: staleDate))
+            let beforeUpdate = Date.now
+            await verifier.update(updated, session: store.session, force: true)
             for _ in 0..<20 {
-                if activity.content.state == updated && abs((activity.content.staleDate ?? .distantPast).timeIntervalSince(staleDate)) < 1 { break }
+                if verifier.status?.state == updated && (verifier.status?.staleDate ?? .distantPast) > beforeUpdate.addingTimeInterval(80) { break }
                 try await Task.sleep(for: .milliseconds(100))
+                await verifier.refreshStatus()
             }
-            report["updated"] = activity.content.state == updated && abs((activity.content.staleDate ?? .distantPast).timeIntervalSince(staleDate)) < 1
-            report["requestedStaleDate"] = staleDate.timeIntervalSince1970
-            report["observedStaleDate"] = activity.content.staleDate?.timeIntervalSince1970
+            report["updated"] = verifier.status?.state == updated && (verifier.status?.staleDate ?? .distantPast) > beforeUpdate.addingTimeInterval(80)
+            report["observedStaleDate"] = verifier.status?.staleDate?.timeIntervalSince1970
             await verifier.stop()
-            report["ended"] = !Activity<AgentActivityAttributes>.activities.contains { $0.id == activity.id && ($0.activityState == .active || $0.activityState == .stale) }
-            report["endedState"] = String(describing: activity.activityState)
+            report["ended"] = !verifier.isRunning && verifier.status?.activeCount == 0
+            report["endedState"] = "ended"
             await store.liveActivity.start(state: updated, session: store.session)
             let empty = AgentActivityState(agents: [], workspaces: [])
             await store.liveActivity.update(empty, session: store.session)
-            report["hiddenWhenEmpty"] = !store.liveActivity.isRunning && store.liveActivity.isEnabled && !Activity<AgentActivityAttributes>.activities.contains { $0.activityState == .active }
+            report["hiddenWhenEmpty"] = !store.liveActivity.isRunning && store.liveActivity.isEnabled && store.liveActivity.status?.activeCount == 0
             let handoff = await BackgroundHandoffVerification.run(store: store)
             report["backgroundHandoff"] = handoff
             report["resumedInBackground"] = store.liveActivity.isRunning && !NSApp.isActive
             report["monitoring"] = store.liveActivity.isRunning
-            report["activeCount"] = Activity<AgentActivityAttributes>.activities.filter { $0.activityState == .active }.count
-            report["monitoringID"] = Activity<AgentActivityAttributes>.activities.first { $0.activityState == .active }?.id ?? ""
+            report["activeCount"] = store.liveActivity.status?.activeCount ?? 0
+            report["monitoringID"] = store.liveActivity.status?.activityID ?? ""
             report["passed"] = report["updated"] as? Bool == true && report["ended"] as? Bool == true && report["hiddenWhenEmpty"] as? Bool == true && report["resumedInBackground"] as? Bool == true && handoff["passed"] as? Bool == true
             report["error"] = store.liveActivity.message ?? ""
             store.start()

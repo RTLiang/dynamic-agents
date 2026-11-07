@@ -11,7 +11,7 @@ struct AgentLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AgentActivityAttributes.self) { context in
             ActivityPanel(state: context.state, stale: context.isStale)
-                .widgetURL(URL(string: "dynamicagents://dashboard"))
+                .widgetURL(AgentHandoff.dashboardURL)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.bottom) {
@@ -44,7 +44,7 @@ struct AgentLiveActivityWidget: Widget {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(context.isStale ? L10n.text("Status out of date") : context.state.compactLabels(accessibility: true).joined(separator: ", "))
             }
-            .widgetURL(URL(string: "dynamicagents://dashboard"))
+            .widgetURL(AgentHandoff.dashboardURL)
         }
     }
 

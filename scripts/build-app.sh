@@ -70,11 +70,15 @@ stamp_version() {
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $app_build" "$1"
 }
 stamp_version "$destination/Contents/Info.plist"
+signing_identity="${APP_SIGNING_IDENTITY:--}"
 if [[ "$mode" == "native" ]]; then
-  extension="$destination/Contents/PlugIns/DynamicAgentsWidgets.appex"
+  extension="$destination/Contents/Helpers/DynamicAgentsHandoff.app/Contents/PlugIns/DynamicAgentsWidgets.appex"
   stamp_version "$extension/Contents/Info.plist"
-  codesign --force --sign - --entitlements Resources/Widget.entitlements "$extension"
+  codesign --force --sign "$signing_identity" --entitlements Resources/Widget.entitlements "$extension"
+  helper="$destination/Contents/Helpers/DynamicAgentsHandoff.app"
+  stamp_version "$helper/Contents/Info.plist"
+  codesign --force --sign "$signing_identity" "$helper"
 fi
-codesign --force --sign - --entitlements Resources/App.entitlements "$destination"
+codesign --force --sign "$signing_identity" --entitlements Resources/App.entitlements "$destination"
 codesign --verify --deep --strict "$destination"
 echo "Built $destination"

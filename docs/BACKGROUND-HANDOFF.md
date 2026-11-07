@@ -1,13 +1,31 @@
 # 后台终端跳转
 
-实时活动中的 agent 行使用 `Button(intent: FocusAgentIntent(...))`。动作声明 `.background` 模式与主 App 执行目标，沿用应用的客户端窗口定位、agent 直连与错误处理，不先打开主窗口。活动 ID 按 herdr session 隔离；URL 也只接受当前活动对应的带命名空间 ID。
+原生包包含主 App、`Contents/Helpers/DynamicAgentsHandoff.app` 和辅助 App 内的 Widget 扩展。辅助 App 持有 ActivityKit 活动；主 App 通过有界的本机分布式通知更新活动、读取状态或结束活动。相同请求 UUID 的重试只执行一次，活动操作按顺序处理。
 
-验证模式为当前选中的 agent 打开或复用直连视图，不向 agent 发送输入。它先激活所选客户端，再直接执行同一个 intent，通过激活通知检查 App 是否出现在前台，并检查实际选中的终端 surface 是否与直连客户端的 TTY 对应：
+实时活动中的会话行使用系统 `Link`，URL 为 `dynamicagents-focus://agent?pane=<scoped-id>`。系统将活动链接交给活动所属 App，因此 Widget 必须嵌入后台宿主。只在主 App 中嵌入 Widget、另行注册 URL 处理器，不能保证系统活动行会选择那个处理器。
 
-```bash
-bash scripts/install-app.sh --verify-live-activity "$PWD/.build/handoff-check.json"
-```
+后台宿主不创建主窗口。它向主 App 转交经过验证的会话 ID；主 App 未运行时，使用 `activates = false`、`hides = true` 启动。接收器和监控在 AppDelegate 启动阶段建立，不依赖窗口显示。共用的 `AgentFocusAction` 重新获取会话状态、核对带命名空间的 ID，再定位已有客户端页面。结果通过请求 UUID 回执确认，错误由辅助进程显示。明确点击仪表盘链接时才以前台方式打开主 App。
 
-验证同时检查后台 App Intent 元数据。直接调用 `perform()` 不能证明系统 Widget 鼠标点击的完整分发路径；需要单独在目标系统上手动测试。
+本机 macOS 27.3 的 ad-hoc 扩展曾遇到 App Intents 的 `requiresValidatedBundle` 和 team identifier 校验失败。当前系统行路径使用 URL 转交，不依赖 App Intent 扩展分发。
 
-macOS 27.3 SDK 中 `LiveActivityIntent` 不可用于 macOS，因此使用 `AppIntent`；详见 [Apple 的主进程执行目标](https://developer.apple.com/documentation/appintents/intentexecutiontargets/main)。
+## 生命周期
+
+没有符合条件的 agent 时，后台宿主结束活动并继续接收监控更新。有新活动时重新创建活动。ActivityKit 要求创建时宿主处于前台；无窗口宿主临时切换为常规应用并取得激活，创建完成后恢复此前的前台应用，随后恢复后台应用类型。已有活动的内容更新和会话链接不创建主 App 窗口。
+
+用户或系统结束活动会停用监控中的活动开关；只有明确重新启用才重新创建。主 App 正常退出时同步发送结束请求，由宿主异步结束活动，避免在 AppKit 退出流程中等待通知回执。宿主在未连接且无请求时延迟退出，允许短时间内重新连接。主进程意外退出而活动仍存在时，会话链接可以在后台重新启动主 App。
+
+herdr 会话通过选定客户端内的导航器定位已有页面，详见 [终端定位](TERMINAL-DETECTION.md)。桌面 Hook 会话仍定位已有终端或激活已观察到的桌面宿主。
+
+## 安装与权限
+
+安装器正常退出主 App，注销构建产物及旧安装，停止属于当前用户、标识与进程启动时间均已核对的 Widget／辅助进程，再将旧包移到废纸篓。安装完成后注册主 App、后台宿主及其 Widget。清理仅针对指定产品目录和本 App 的废纸篓副本，不重置系统 Launch Services 或终止系统 Widget 渲染进程。
+
+自动化和辅助功能授权属于执行定位的主 App。开发中的 ad-hoc 构建重新签名后，macOS 可能要求重新授权；终端中运行的诊断工具获准，不代表安装的 App 也获准。App 不修改系统隐私授权。构建可通过 `APP_SIGNING_IDENTITY` 指定本机可用的签名身份；默认仍为 ad-hoc，不执行公证。
+
+## 验证
+
+`--verify-live-activity` 读取后台宿主返回的 ActivityKit 状态，检查启动、实际内容更新、结束、空列表隐藏和后台恢复。后台定位报告直接调用共用动作；它不等于系统控件点击验证。
+
+系统路径必须另测：展开真实活动，通过无障碍动作或鼠标点击会话行，核对实际命中元素，记录辅助进程确认、目标 surface、页面 ID、终端数量和主 App 激活次数。分别测试主 App 已运行、主 App 未运行及重复点击。禁止仅凭前台 App 正确或缓存的弹层坐标判定成功；无障碍动作与鼠标点击分别记录。
+
+证据保存于忽略的 `.build/`。锁屏或缺少自动化／辅助功能授权时记录阻塞，前置条件满足后重新测试。

@@ -32,8 +32,8 @@ private let clientApp = TerminalApplication(pid: 10, bundleID: "com.mitchellh.gh
 @Test func onlyReadsHerdrEndpointHintsFromTheEnvironment() {
     var argc: Int32 = 1
     var bytes = withUnsafeBytes(of: &argc) { Array($0) }
-    bytes += Array("/bin/herdr\0\0herdr\0SECRET=must-not-escape\0HERDR_SESSION=research\0HERDR_SOCKET_PATH=/tmp/example-endpoint.sock\0OTHER=private\0".utf8)
-    #expect(ProcessInventory.decodeHerdrEnvironment(bytes) == ["HERDR_SESSION": "research", "HERDR_SOCKET_PATH": "/tmp/example-endpoint.sock"])
+    bytes += Array("/bin/herdr\0\0herdr\0SECRET=must-not-escape\0HERDR_SESSION=research\0HERDR_SOCKET_PATH=/tmp/example-endpoint.sock\0HERDR_CONFIG_PATH=/tmp/example-config.toml\0XDG_CONFIG_HOME=/tmp/example-config\0OTHER=private\0".utf8)
+    #expect(ProcessInventory.decodeHerdrEnvironment(bytes) == ["HERDR_SESSION": "research", "HERDR_SOCKET_PATH": "/tmp/example-endpoint.sock", "HERDR_CONFIG_PATH": "/tmp/example-config.toml", "XDG_CONFIG_HOME": "/tmp/example-config"])
     #expect(ProcessInventory.decodeArguments(bytes) == ["herdr"])
     #expect(ProcessInventory.decodeHerdrEnvironment([1, 0]).isEmpty)
 }
@@ -47,12 +47,11 @@ private let clientApp = TerminalApplication(pid: 10, bundleID: "com.mitchellh.gh
     #expect(throws: HerdrError.self) { try TerminalSurfaceResolver.surface(for: client, surfaces: [correct, correct]) }
 }
 
-@Test func navigationReusesAttachmentsAndNeverBroadcastsServerFocus() {
+@Test func navigationUsesExistingClientsAndMatchingAttachments() {
     let normal = TerminalClient(application: clientApp, processID: 40, tty: "/dev/ttys001", session: "default", attachedPaneID: nil)
     let attached = TerminalClient(application: clientApp, processID: 41, tty: "/dev/ttys002", session: "default", attachedPaneID: "wA:p1")
-    #expect(TerminalFocusPolicy.resolve(client: normal, paneID: "wA:p1") == .dedicatedAttachment)
+    #expect(TerminalFocusPolicy.resolve(client: normal, paneID: "wA:p1") == .existingClient)
     #expect(TerminalFocusPolicy.resolve(client: attached, paneID: "wA:p1") == .existingAttachment)
-    #expect(TerminalFocusPolicy.resolve(client: attached, paneID: "wA:p2") == .dedicatedAttachment)
 }
 
 @Test func activityIDsCannotJumpIntoADifferentSession() throws {

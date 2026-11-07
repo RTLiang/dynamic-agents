@@ -4,7 +4,7 @@
 
 ## 发布
 
-推送稳定版本标签 `vMAJOR.MINOR.PATCH` 触发 `Native Release`。工作流确认标签属于 main 历史，运行检查，构建 arm64 原生 App 和嵌入 Widget，统一两者版本及 build number，验证签名和包结构，生成 ZIP 与 SHA-256 文件后发布 GitHub Release。已发布的 Release 不会被重跑覆盖。
+推送稳定版本标签 `vMAJOR.MINOR.PATCH` 触发 `Native Release`。工作流确认标签属于 main 历史，运行检查，构建 arm64 原生 App、嵌入 Widget 和后台转交辅助 App，统一三者版本及 build number，验证架构、签名、URL 处理器和包结构，生成 ZIP 与 SHA-256 文件后发布 GitHub Release。已发布的 Release 不会被重跑覆盖。
 
 ```bash
 git tag v0.1.0

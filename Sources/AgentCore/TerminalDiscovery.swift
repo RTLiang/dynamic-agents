@@ -9,9 +9,10 @@ public struct ProcessRecord: Sendable {
     public let tty: String?
     public let sessionHint: String?
     public let socketHint: String?
+    public let configHint: String?
     public let startedAt: Date?
 
-    public init(pid: Int32, parentPID: Int32, executable: String, arguments: [String]? = nil, tty: String? = nil, sessionHint: String? = nil, socketHint: String? = nil, startedAt: Date? = nil) {
+    public init(pid: Int32, parentPID: Int32, executable: String, arguments: [String]? = nil, tty: String? = nil, sessionHint: String? = nil, socketHint: String? = nil, configHint: String? = nil, startedAt: Date? = nil) {
         self.pid = pid
         self.parentPID = parentPID
         self.executable = executable
@@ -19,6 +20,7 @@ public struct ProcessRecord: Sendable {
         self.tty = tty
         self.sessionHint = sessionHint
         self.socketHint = socketHint
+        self.configHint = configHint
         self.startedAt = startedAt
     }
 }
@@ -52,7 +54,7 @@ public enum TerminalResolution: Equatable, Sendable {
 public enum TerminalResolver {
     public static func resolve(processes: [ProcessRecord], applications: [TerminalApplication], session: String, socketPath: String? = nil) -> TerminalResolution {
         let clients = resolveClients(processes: processes, applications: applications, session: session, socketPath: socketPath)
-        if clients.count == 1 { return .resolved(clients[0].application) }
+        if let selected = try? TerminalClientSelection.client(from: clients, paneID: nil, preferredBundleID: "", preferredClientID: "") { return .resolved(selected.application) }
         let apps = Set(clients.map(\.application)).sorted { ($0.name, $0.pid) < ($1.name, $1.pid) }
         return apps.isEmpty ? .unavailable : .ambiguous(apps)
     }
@@ -75,7 +77,7 @@ public enum TerminalResolver {
             var visited = Set<Int32>()
             while current > 1, visited.insert(current).inserted {
                 if let app = appsByPID[current] {
-                    matches.append(TerminalClient(application: app, processID: client.pid, tty: client.tty, session: targetSession, attachedPaneID: invocation.pane))
+                    matches.append(TerminalClient(application: app, processID: client.pid, tty: client.tty, session: targetSession, attachedPaneID: invocation.pane, configPath: client.configHint, startedAt: client.startedAt))
                     break
                 }
                 guard let parent = byPID[current] else { break }
@@ -128,21 +130,22 @@ public enum ProcessInventory {
             let pathResult = proc_pidpath(pid, &path, pathSize)
             let executable = pathResult > 0 ? path.withUnsafeBufferPointer { String(cString: $0.baseAddress!) } : ""
             let isHerdr = executable == expected || URL(fileURLWithPath: executable).lastPathComponent == "herdr"
-            let context = onlyPIDs == nil && isHerdr && uid == getuid() ? readContext(pid: pid) : (nil, nil, nil)
-            let start = onlyPIDs != nil && uid == getuid() ? startedAt(pid: pid) : nil
-            return ProcessRecord(pid: pid, parentPID: parent, executable: executable, arguments: context.0, tty: tty, sessionHint: context.1, socketHint: context.2, startedAt: start)
+            let context = onlyPIDs == nil && isHerdr && uid == getuid() ? readContext(pid: pid) : (nil, nil, nil, nil)
+            let start = (onlyPIDs != nil || isHerdr) && uid == getuid() ? startedAt(pid: pid) : nil
+            return ProcessRecord(pid: pid, parentPID: parent, executable: executable, arguments: context.0, tty: tty, sessionHint: context.1, socketHint: context.2, configHint: context.3, startedAt: start)
         }
     }
 
-    private static func readContext(pid: Int32) -> ([String]?, String?, String?) {
+    private static func readContext(pid: Int32) -> ([String]?, String?, String?, String?) {
         var mib = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
-        guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size >= 4, size <= 1_048_576 else { return (nil, nil, nil) }
+        guard sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0) == 0, size >= 4, size <= 1_048_576 else { return (nil, nil, nil, nil) }
         var data = [UInt8](repeating: 0, count: size)
-        guard sysctl(&mib, UInt32(mib.count), &data, &size, nil, 0) == 0 else { return (nil, nil, nil) }
+        guard sysctl(&mib, UInt32(mib.count), &data, &size, nil, 0) == 0 else { return (nil, nil, nil, nil) }
         let payload = Array(data.prefix(size))
         let hints = decodeHerdrEnvironment(payload)
-        return (decodeArguments(payload), hints["HERDR_SESSION"], hints["HERDR_SOCKET_PATH"])
+        let config = hints["HERDR_CONFIG_PATH"] ?? hints["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0).appendingPathComponent("herdr/config.toml").path }
+        return (decodeArguments(payload), hints["HERDR_SESSION"], hints["HERDR_SOCKET_PATH"], config)
     }
 
     public static func startedAt(pid: Int32) -> Date? {
@@ -168,7 +171,7 @@ public enum ProcessInventory {
             let end = min(index - 1, bytes.count)
             guard end > start else { continue }
             let item = bytes[start..<end]
-            for key in ["HERDR_SESSION", "HERDR_SOCKET_PATH"] {
+            for key in ["HERDR_SESSION", "HERDR_SOCKET_PATH", "HERDR_CONFIG_PATH", "XDG_CONFIG_HOME"] {
                 let prefix = Array((key + "=").utf8)
                 if item.starts(with: prefix), item.count - prefix.count <= 4096,
                    let value = String(bytes: item.dropFirst(prefix.count), encoding: .utf8), !value.isEmpty {

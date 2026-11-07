@@ -1,27 +1,24 @@
 # Terminal focus
 
-Dashboard, menu and background Widget actions open the selected agent in its herdr session and terminal window. Reuse an existing dedicated attachment; otherwise create a tab in the selected Ghostty/iTerm2 window, or a separate Apple Terminal window. Public herdr focus broadcasts are intentionally absent.
-
-## Entry points
-
-Double-click a dashboard row, press Return on a selected row, use Open in Terminal, select a menu-bar agent, or click an expanded system Live Activity row. All entries use the same store action.
+Dashboard, menu and system Widget actions select an existing agent page in the chosen herdr client. Ghostty, iTerm2 and Apple Terminal use native surface identity plus the selected client's Go to navigator. Repeat clicks preserve the set of terminal surfaces.
 
 ## Preconditions
 
-Use an unlocked GUI, a supported terminal with Automation consent, and dedicated herdr sessions. Honor user authorization already present in the conversation before requesting it again. Real focus opens or activates terminal views; use isolated owned sessions for new probes. The fixture only supports snapshot/status and integration requests; it cannot prove native window handoff.
+Use an unlocked GUI, a supported terminal, Automation and Accessibility authorization, and owned disposable herdr sessions. Honor authorization already present in the conversation. The Companion fixture cannot prove real terminal navigation. Check lock state before sending any event; a failed precondition stops the UI journey while independent builds and model checks may continue.
 
 ## Journeys
 
-1. Run `HERDR_LIVE_TEST=1 swift test --build-system native` for read-only discovery. Record clients, PID/TTY and session distinctions in ignored evidence.
-2. Open two terminal windows with different named herdr sessions. Configure one session; click its dashboard agent. Confirm the new attachment uses that session and the intended window, while the other window retains its workspace/tab/pane.
-3. Open two clients of the same session. Choose one in Connection Settings → herdr Window; click its agent. Confirm only that window gets a new attachment and that the original views retain their selections. Repeat the click: the existing attachment is selected without another tab.
-4. Select the other session in settings, then invoke the old scoped agent action. It must not open a same-named pane in the new session. Close the chosen client and retry: report its absence without choosing another window.
-5. Repeat required entries through the menu and system Widget. For Widget actions, observe activation notifications and require zero Dynamic Agents activations.
+1. Capture each client's PID, creation time, TTY, session, native window/surface and current pane. Prefer a unique ordinary herdr client in Automatic mode; manually selected clients remain authoritative.
+2. In each of Ghostty, iTerm2 and Apple Terminal, create two owned clients of one disposable session. Select a different pane in the chosen client through the dashboard. Verify its navigator reports the target pane and the other client retains its page.
+3. Repeat the action. Require identical before/after terminal surface sets and the same selected page; no new window, tab or attachment process should appear.
+4. Repeat through the menu and a real system activity row. For system actions record URL-helper acknowledgement, target app/surface, and zero main-app activations. Label AXPress and actual pointer clicks separately. For pointer tests verify the topmost hit element belongs to the visible activity; cached closed-popover coordinates are insufficient.
+5. Select another client, a different session and a closed client in turn. Require the manual anchor and session scope to hold. A stale activity cannot select a same-named pane in another session. An attachment to a different agent must return an error instead of receiving navigation keys.
+6. Exercise the App running and not running. The URL helper must wake the installed main app in the background and exit after an acknowledged result.
 
-For each action capture before/action/after separately: native terminal window and selected surface IDs, the attachment client TTY/PID/argv, unchanged original client locations and frontmost application. A global `focused_pane_id` remaining unchanged helps demonstrate isolation but cannot prove the right window is frontmost.
+Capture before/action/after independently. Keep PID/TTY, navigation text, app activation traces and native surface sets under ignored `.build/`. A global server `focused_pane_id` is isolation evidence only; it does not prove a client's selected page.
 
-`bash scripts/verify-terminal.sh` opens/reuses the current agent attachment and reports `exactWindowVerified` using native surface identity. Native `--verify-live-activity` calls the real intent directly and checks the same condition; see [live-activity.md](live-activity.md). These probes do not establish a physical system Widget click.
+## Existing probes
 
-## Boundaries
+`HERDR_LIVE_TEST=1 swift test --build-system native` checks read-only discovery. `scripts/verify-terminal.sh` runs the shared native action and reports `exactWindowVerified` and `terminalViewsUnchanged`. Native `--verify-live-activity` directly invokes the common action and checks background activation; it is not a system control click.
 
-A locked screen or absent Automation permission blocks real window verification; report that precondition and retain build/model evidence. AppleScript compilation only checks grammar and dictionary contracts. Unsupported terminals fail explicitly. General desktop editor hooks activate the observed host app; selecting a particular editor conversation is outside this capability. Keep logs, window IDs, paths and session data under ignored `.build/`.
+Use observed results for vendor coverage. Script compilation checks grammar and dictionary contracts only. General desktop editor hooks activate the observed host app; exact editor conversation selection remains outside this flow.

@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>CFBundleName</key><string>Dynamic Agents Live Activity</string>
-<key>CFBundleIdentifier</key><string>dev.local.dynamicagents.widgets</string>
+<key>CFBundleIdentifier</key><string>dev.local.dynamicagents.handoff.widgets</string>
 <key>CFBundleExecutable</key><string>DynamicAgentsWidgets</string>
 <key>CFBundlePackageType</key><string>XPC!</string>
 <key>CFBundleDevelopmentRegion</key><string>en</string>

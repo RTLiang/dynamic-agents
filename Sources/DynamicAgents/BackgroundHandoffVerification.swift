@@ -37,7 +37,7 @@ enum BackgroundHandoffVerification {
             guard let agent = store.agents.first(where: { $0.paneID == pane && !$0.isHookSession }) else {
                 throw HerdrError.message("The scoped agent is no longer available.")
             }
-            _ = try await FocusAgentIntent(paneID: agent.id).perform()
+            try await AgentFocusAction.perform(agentID: agent.id)
             try await Task.sleep(for: .milliseconds(500))
             let after = try await store.client.snapshot()
             let frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
@@ -48,7 +48,7 @@ enum BackgroundHandoffVerification {
             report["paneBefore"] = pane
             report["paneAfter"] = after.focusedPaneID ?? ""
             await store.refreshTerminals()
-            let exactWindow = try store.terminal.attachmentIsFocused(paneID: agent.paneID, preferredBundleID: store.terminalBundleID)
+            let exactWindow = try await store.terminal.agentIsFocused(paneID: agent.paneID, preferredBundleID: store.terminalBundleID)
             report["exactWindowVerified"] = exactWindow
             report["passed"] = !flashed && exactWindow && frontmost == terminal.bundleID && after.focusedPaneID == pane && store.actionError == nil
             report["error"] = store.actionError ?? ""

@@ -6,3 +6,5 @@ xcuserdata/
 Resources/AppIcon.icns
 docs/images/
 docs/verification/
+__pycache__/
+*.pyc

@@ -39,7 +39,7 @@ enum TerminalAutomation {
                 repeat with w in windows
                     repeat with t in tabs of w
                         repeat with s in terminals of t
-                            set output to output & (id of s as text) & tab & (id of w as text) & tab & (tty of s as text) & tab & (pid of s as text) & linefeed
+                            set output to output & (id of s as text) & fieldSeparator & (id of w as text) & fieldSeparator & (tty of s as text) & fieldSeparator & (pid of s as text) & linefeed
                         end repeat
                     end repeat
                 end repeat
@@ -52,7 +52,7 @@ enum TerminalAutomation {
                 set output to ""
                 repeat with w in windows
                     repeat with t in tabs of w
-                        set output to output & (tty of t as text) & tab & (id of w as text) & tab & (tty of t as text) & tab & "0" & linefeed
+                        set output to output & (tty of t as text) & fieldSeparator & (id of w as text) & fieldSeparator & (tty of t as text) & fieldSeparator & "0" & linefeed
                     end repeat
                 end repeat
                 return output
@@ -65,7 +65,7 @@ enum TerminalAutomation {
                 repeat with w in windows
                     repeat with t in tabs of w
                         repeat with s in sessions of t
-                            set output to output & (id of s as text) & tab & (id of w as text) & tab & (tty of s as text) & tab & "0" & linefeed
+                            set output to output & (id of s as text) & fieldSeparator & (id of w as text) & fieldSeparator & (tty of s as text) & fieldSeparator & "0" & linefeed
                         end repeat
                     end repeat
                 end repeat
@@ -75,7 +75,7 @@ enum TerminalAutomation {
         default:
             throw HerdrError.message(L10n.text("Exact window focus requires Ghostty 1.3 or later, iTerm2, or Apple Terminal. Other terminals will not be activated speculatively."))
         }
-        return try run(source).split(whereSeparator: \.isNewline).compactMap { line in
+        return try run("set fieldSeparator to character id 9\n" + source).split(whereSeparator: \.isNewline).compactMap { line in
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             guard fields.count == 4 else { return nil }
             return TerminalSurface(id: fields[0], windowID: fields[1], tty: fields[2], processID: Int32(fields[3]))
@@ -93,6 +93,34 @@ enum TerminalAutomation {
             return try run("tell application id \"com.googlecode.iterm2\" to return id of current session of current tab of current window")
         default: throw HerdrError.message(L10n.text("This terminal does not support exact window focus."))
         }
+    }
+
+    static func sendKey(_ key: HerdrNavigationKey, to surface: TerminalSurface, application: TerminalApplication) throws -> Bool {
+        guard application.bundleID == "com.mitchellh.ghostty" else { return false }
+        try validate(application)
+        let modifiers = key.modifiers.sorted().joined(separator: ",")
+        let names = ["return":"enter", "esc":"escape", "/":"slash", "\\":"backslash", ".":"period", ",":"comma", ";":"semicolon", "'":"apostrophe", "=":"equal", "-":"minus", "[":"bracket_left", "]":"bracket_right", "`":"grave"]
+        let name = names[key.key] ?? key.key
+        _ = try run("""
+        tell application id "com.mitchellh.ghostty"
+            set targetTerminal to first terminal whose id is \(literal(surface.id))
+            send key \(literal(name)) modifiers \(literal(modifiers)) to targetTerminal
+            send key \(literal(name)) action release modifiers \(literal(modifiers)) to targetTerminal
+        end tell
+        """)
+        return true
+    }
+
+    static func inputText(_ text: String, to surface: TerminalSurface, application: TerminalApplication) throws -> Bool {
+        guard application.bundleID == "com.mitchellh.ghostty" else { return false }
+        try validate(application)
+        _ = try run("""
+        tell application id "com.mitchellh.ghostty"
+            set targetTerminal to first terminal whose id is \(literal(surface.id))
+            input text \(literal(text)) to targetTerminal
+        end tell
+        """)
+        return true
     }
 
     static func focus(_ surface: TerminalSurface, application: TerminalApplication) throws {
@@ -144,44 +172,6 @@ enum TerminalAutomation {
                     end if
                 end repeat
                 error "Terminal session no longer exists"
-            end tell
-            """)
-        default: throw HerdrError.message(L10n.text("This terminal does not support exact window focus."))
-        }
-    }
-
-    static func attach(paneID: String, executable: String, session: String, in surface: TerminalSurface, application: TerminalApplication) throws {
-        try validate(application)
-        let argv = [executable, "--session", session.isEmpty ? "default" : session, "agent", "attach", paneID]
-        let command = argv.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
-        switch application.bundleID {
-        case "com.mitchellh.ghostty":
-            _ = try run("""
-            tell application id "com.mitchellh.ghostty"
-                set targetWindow to first window whose id is \(literal(surface.windowID))
-                set configuration to new surface configuration
-                set command of configuration to \(literal(command))
-                set createdTab to new tab in targetWindow with configuration configuration
-                focus (focused terminal of createdTab)
-            end tell
-            """)
-        case "com.apple.Terminal":
-            _ = try run("""
-            tell application id "com.apple.Terminal"
-                do script \(literal(command))
-                activate
-            end tell
-            """)
-        case "com.googlecode.iterm2":
-            guard let windowID = Int(surface.windowID) else { throw HerdrError.message(L10n.text("This terminal does not support exact window focus.")) }
-            _ = try run("""
-            tell application id "com.googlecode.iterm2"
-                set targetWindow to first window whose id is \(windowID)
-                tell targetWindow
-                    set createdTab to create tab with default profile command \(literal(command))
-                end tell
-                select createdTab
-                activate
             end tell
             """)
         default: throw HerdrError.message(L10n.text("This terminal does not support exact window focus."))

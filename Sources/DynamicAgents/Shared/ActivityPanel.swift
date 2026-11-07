@@ -1,6 +1,5 @@
 #if NATIVE_LIVE_ACTIVITIES
 import SwiftUI
-import AppIntents
 
 struct ActivityPanel: View {
     let state: AgentActivityState
@@ -25,7 +24,7 @@ struct AgentActivityContentView: View {
                     .padding(.bottom, 4)
             }
             ForEach(state.items) { agent in
-                Button(intent: FocusAgentIntent(paneID: agent.id)) {
+                Link(destination: AgentHandoff.url(for: agent.id)) {
                     HStack(spacing: 12) {
                         Text(agent.title)
                             .font(.system(size: 15, weight: .medium))
@@ -47,7 +46,7 @@ struct AgentActivityContentView: View {
                 .accessibilityHint(L10n.text("Open Agent"))
             }
             if state.total > state.items.count {
-                Link(L10n.format("session.more", Int64(state.total - state.items.count)), destination: URL(string: "dynamicagents://dashboard")!)
+                Link(L10n.format("session.more", Int64(state.total - state.items.count)), destination: AgentHandoff.dashboardURL)
                     .buttonStyle(.plain)
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(.top, 4)

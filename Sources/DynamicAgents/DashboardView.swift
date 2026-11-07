@@ -125,7 +125,7 @@ struct DashboardView: View {
             if let selection, !ids.contains(selection) { self.selection = nil }
         }
         .sheet(isPresented: $showingSettings) { ConnectionSettings(store: store) }
-        .alert(L10n.text("Action Failed"), isPresented: Binding(get: { store.actionError != nil }, set: { if !$0 { store.actionError = nil } })) {
+        .alert(L10n.text("Action Failed"), isPresented: Binding(get: { store.presentsActionError && store.actionError != nil }, set: { if !$0 { store.actionError = nil } })) {
             Button(L10n.text("OK")) { store.actionError = nil }
         } message: { Text(store.actionError ?? "") }
     }

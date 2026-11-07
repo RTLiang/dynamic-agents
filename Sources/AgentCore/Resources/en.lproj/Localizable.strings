@@ -113,6 +113,14 @@
 "The herdr pane is selected. %@" = "The herdr pane is selected. %@";
 "The selected terminal app was not found. Choose it again in settings." = "The selected terminal app was not found. Choose it again in settings.";
 "This agent has ended. Refresh the Live Activity." = "This agent has ended. Refresh the Live Activity.";
+"Unable to open Dynamic Agents." = "Unable to open Dynamic Agents.";
+"Unable to read the herdr navigation shortcuts. Check its prefix and goto keybindings." = "Unable to read the herdr navigation shortcuts. Check its prefix and goto keybindings.";
+"Allow Dynamic Agents in System Settings > Privacy & Security > Accessibility to select existing herdr pages." = "Allow Dynamic Agents in System Settings > Privacy & Security > Accessibility to select existing herdr pages.";
+"Unlock your Mac before selecting an existing herdr page." = "Unlock your Mac before selecting an existing herdr page.";
+"The selected terminal view changed. Try the action again." = "The selected terminal view changed. Try the action again.";
+"Unable to verify the existing herdr page. Keep its terminal window visible and try again." = "Unable to verify the existing herdr page. Keep its terminal window visible and try again.";
+"This view is attached to another agent. Select a herdr window in settings." = "This view is attached to another agent. Select a herdr window in settings.";
+"Dynamic Agents did not respond. Open the app and try again." = "Dynamic Agents did not respond. Open the app and try again.";
 "Turn off Live Activity" = "Turn off Live Activity";
 "Type" = "Type";
 "Unable to connect to herdr. Try again." = "Unable to connect to herdr. Try again.";

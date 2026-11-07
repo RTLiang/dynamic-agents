@@ -19,6 +19,11 @@ enum TerminalVerification {
             guard store.terminalBundleID.isEmpty else {
                 throw HerdrError.message("The zero-configuration check requires automatic mode and one detected terminal.")
             }
+            let anchor = try TerminalClientSelection.client(from: store.terminal.clients, paneID: agent.paneID, preferredBundleID: "", preferredClientID: store.terminal.preferredClientID)
+            let surfaces = try TerminalAutomation.surfaces(in: anchor.application)
+            report["clientTTY"] = anchor.tty ?? ""
+            report["clientPID"] = anchor.processID
+            report["surfaces"] = surfaces.map { ["id": $0.id, "windowID": $0.windowID, "tty": $0.tty, "processID": String($0.processID ?? 0)] }
             let detected = try store.terminal.prepareFocus(paneID: agent.paneID, preferredBundleID: "").client.application
             NSApp.activate(ignoringOtherApps: true)
             try await Task.sleep(for: .milliseconds(300))
@@ -28,10 +33,13 @@ enum TerminalVerification {
             let actual = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
             let after = try await store.client.snapshot()
             await store.refreshTerminals()
-            let exactWindow = try store.terminal.attachmentIsFocused(paneID: agent.paneID, preferredBundleID: "")
+            let exactWindow = try await store.terminal.agentIsFocused(paneID: agent.paneID, preferredBundleID: "")
+            let afterSurfaces = try TerminalAutomation.surfaces(in: detected)
+            let unchangedViews = Set(surfaces.map(\.id)) == Set(afterSurfaces.map(\.id))
             report = [
-                "passed": store.actionError == nil && initialFrontmost == Bundle.main.bundleIdentifier && actual == detected.bundleID && exactWindow && after.focusedPaneID == pane,
+                "passed": store.actionError == nil && initialFrontmost == Bundle.main.bundleIdentifier && actual == detected.bundleID && exactWindow && unchangedViews && after.focusedPaneID == pane,
                 "exactWindowVerified": exactWindow,
+                "terminalViewsUnchanged": unchangedViews,
                 "automatic": true,
                 "detectedApp": detected.name,
                 "detectedBundleID": detected.bundleID,

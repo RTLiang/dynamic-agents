@@ -113,6 +113,14 @@
 "The herdr pane is selected. %@" = "已选中 herdr pane。%@";
 "The selected terminal app was not found. Choose it again in settings." = "找不到选择的终端 App，请在设置中重新选择。";
 "This agent has ended. Refresh the Live Activity." = "此 agent 已结束，请刷新实时活动。";
+"Unable to open Dynamic Agents." = "无法打开 Dynamic Agents。";
+"Unable to read the herdr navigation shortcuts. Check its prefix and goto keybindings." = "无法读取 herdr 导航快捷键，请检查其 prefix 和 goto 按键设置。";
+"Allow Dynamic Agents in System Settings > Privacy & Security > Accessibility to select existing herdr pages." = "请在“系统设置 → 隐私与安全性 → 辅助功能”中允许 Dynamic Agents，以选择已有 herdr 页面。";
+"Unlock your Mac before selecting an existing herdr page." = "请解锁 Mac 后再选择已有 herdr 页面。";
+"The selected terminal view changed. Try the action again." = "所选终端页面已改变，请重试。";
+"Unable to verify the existing herdr page. Keep its terminal window visible and try again." = "无法核对已有 herdr 页面，请保持其终端窗口可见后重试。";
+"This view is attached to another agent. Select a herdr window in settings." = "此页面直连了另一个 agent，请在设置中选择 herdr 窗口。";
+"Dynamic Agents did not respond. Open the app and try again." = "Dynamic Agents 未响应，请打开 App 后重试。";
 "Turn off Live Activity" = "关闭实时活动";
 "Type" = "类型";
 "Unable to connect to herdr. Try again." = "无法连接 herdr，请重试。";
