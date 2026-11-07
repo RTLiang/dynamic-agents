@@ -82,15 +82,17 @@ struct ConnectionSettings: View {
                             Text(L10n.text("Selected app unavailable")).tag(terminal)
                         }
                     }
+                    .accessibilityIdentifier("terminal-application")
                     Picker(L10n.text("herdr Window"), selection: $terminalClient) {
                         Text(L10n.text("Automatic")).tag("")
                         ForEach(store.terminal.clients.filter { terminal.isEmpty || $0.application.bundleID == terminal }) { client in
                             Text(client.label).tag(client.id)
                         }
-                        if !terminalClient.isEmpty, !store.terminal.clients.contains(where: { $0.id == terminalClient }) {
+                        if !terminalClient.isEmpty, !store.terminal.clients.contains(where: { $0.id == terminalClient && (terminal.isEmpty || $0.application.bundleID == terminal) }) {
                             Text(L10n.text("Selected window unavailable")).tag(terminalClient)
                         }
                     }
+                    .accessibilityIdentifier("terminal-client")
                     Text(store.terminal.status(preferredBundleID: terminal)).foregroundStyle(.secondary)
                     HStack {
                         Button(L10n.text("Detect Again")) { Task { await store.refreshTerminals() } }
@@ -128,6 +130,11 @@ struct ConnectionSettings: View {
             automaticUpdates = savedAutomaticUpdates
             showMenuBarIcon = savedMenuBarIcon
             completionMinutes = min(max(savedCompletionMinutes, 1), 1440)
+        }
+        .onChange(of: terminal) { _, bundle in
+            if !bundle.isEmpty, !terminalClient.isEmpty, !terminalClient.hasPrefix(bundle + ":") {
+                terminalClient = ""
+            }
         }
         .sheet(isPresented: $showingIntegrations) {
             VStack(spacing: 0) {

@@ -79,6 +79,36 @@ class DesktopHooks(unittest.TestCase):
         self.assertEqual(path.read_text(), old)
         self.assertFalse(json.loads((self.directory / "data/sources.json").read_text())["codex"])
 
+    def test_cursor_reads_workspace_roots_without_cwd(self):
+        payload = {"conversation_id": "cursor-roots", "workspace_roots": ["/example/frontend", "/example/backend"], "prompt": "PRIVATE PROMPT"}
+        self.run_hook("report", "cursor", "beforeSubmitPrompt", payload=payload)
+        text = next((self.directory / "data/events").glob("*.json")).read_text()
+        self.assertEqual(json.loads(text)["project"], "frontend, backend")
+        self.assertNotIn("/example/", text)
+        self.assertNotIn("PRIVATE", text)
+
+    def test_sparse_lifecycle_events_preserve_the_last_project(self):
+        self.run_hook("report", "codex", "UserPromptSubmit", payload={"session_id": "sparse", "cwd": "/example/project"})
+        self.run_hook("report", "codex", "Stop", payload={"session_id": "sparse"})
+        path = next((self.directory / "data/events").glob("*.json"))
+        result = json.loads(path.read_text())
+        self.assertEqual(result["project"], "project")
+        self.assertEqual(result["status"], "done")
+        self.run_hook("report", "codex", "UserPromptSubmit", payload={"session_id": "sparse", "cwd": "/example/other"})
+        self.assertEqual(json.loads(path.read_text())["project"], "other")
+
+    def test_outdated_managed_helper_remains_installed_and_can_be_updated(self):
+        self.run_hook("install", "codex")
+        helper = self.directory / "data/desktop-hook.py"
+        helper.write_text(helper.read_text() + "\n# Previous shipped version\n")
+        status = json.loads(self.run_hook("status", "codex").stdout)
+        self.assertTrue(status["installed"])
+        self.assertFalse(status["current"])
+        self.run_hook("install", "codex")
+        updated = json.loads(self.run_hook("status", "codex").stdout)
+        self.assertTrue(updated["installed"])
+        self.assertTrue(updated["current"])
+
     def test_invalid_configuration_is_not_overwritten(self):
         path = self.directory / "config/.codex/hooks.json"
         path.parent.mkdir(parents=True)

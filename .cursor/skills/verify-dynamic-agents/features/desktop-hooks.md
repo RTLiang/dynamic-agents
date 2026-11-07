@@ -5,6 +5,7 @@ Users enable local coding-client lifecycle reports without running the session i
 ## Sub-features
 
 - `desktop-install-remove`: install/remove managed entries for Claude Code, Codex, Cursor and shared-runtime Copilot while preserving other hooks.
+- `desktop-update`: distinguish configured hooks with an older shared helper from missing hooks, update it and refresh every installed adapter.
 - `desktop-events`: prompt/working, completion, interruption and session end drive the dashboard and activity filter.
 - `desktop-host`: activate the observed host app, without guessing that an open client is busy.
 
@@ -18,7 +19,7 @@ Users enable local coding-client lifecycle reports without running the session i
 
 Preconditions: unlocked macOS session and a new isolated `control launch` run. The launch scopes desktop data and client configuration to its scratch directory. Normal user hook files are not used.
 
-- `"$C" desktop-hooks "$RUN" | tee "$E/desktop-hooks.txt"` opens the Desktop Clients tab and installs/removes all four adapters. Require the transcript's state checks and `PASS: desktop-hooks`.
+- `"$C" desktop-hooks "$RUN" | tee "$E/desktop-hooks.txt"` opens the Desktop Clients tab, installs all four adapters, appends a harmless previous-version marker to its owned helper, refreshes through `desktop-hooks-refresh`, requires both Update and Remove for Codex, updates the shared helper and checks all installed adapters before removing them. Require the transcript's state checks and `PASS: desktop-hooks`.
 - Inspect the isolated scratch `config` files and backup files before cleanup; only managed entries should be removed. The bridge `desktop-data/sources.json` must show removed sources disabled.
 - Capture the resulting AX tree using `"$C" snapshot "$RUN" > "$E/desktop-after.json"`, then run the normal cleanup and confirm the evidence remains.
 - Run `python3 scripts/test-desktop-hooks.py` for real script/config and report transitions. The script uses disposable directories and Trash cleanup.

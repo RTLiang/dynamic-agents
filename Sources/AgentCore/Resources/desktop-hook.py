@@ -79,9 +79,10 @@ def configure(source, action):
         raise ValueError("Unsupported hook configuration version")
     installed = all(any(managed(x) for x in hooks.get(event, [])) for event in SOURCES[source][1])
     script = ROOT / "desktop-hook.py"
-    installed = installed and script.is_file() and not script.is_symlink() and script.read_bytes() == Path(__file__).read_bytes()
+    installed = installed and script.is_file() and not script.is_symlink()
+    current = installed and script.read_bytes() == Path(__file__).read_bytes()
     if action == "status":
-        print(json.dumps({"installed": installed}))
+        print(json.dumps({"installed": installed, "current": current}))
         return
     private_directory(ROOT)
     private_directory(ROOT / "events")
@@ -131,7 +132,7 @@ def configure(source, action):
     enabled = json.loads(enabled_path.read_text()) if enabled_path.exists() and not enabled_path.is_symlink() else {}
     enabled[source] = action == "install"
     atomic_json(enabled_path, enabled)
-    print(json.dumps({"installed": action == "install"}))
+    print(json.dumps({"installed": action == "install", "current": action == "install"}))
 
 
 def ancestry():
@@ -147,6 +148,24 @@ def ancestry():
         chain.append(pid)
         pid = parents.get(pid, 0)
     return chain
+
+
+def project_name(source, payload):
+    cwd = payload.get("cwd")
+    if isinstance(cwd, str):
+        roots = [cwd]
+    elif source == "cursor" and isinstance(payload.get("workspace_roots"), list):
+        roots = payload["workspace_roots"]
+    else:
+        return None
+    names = []
+    for root in roots:
+        if not isinstance(root, str) or not root:
+            continue
+        name = "".join(c for c in Path(root).name if ord(c) >= 32)
+        if name and name not in names:
+            names.append(name)
+    return ", ".join(names)[:120]
 
 
 def report(source, event):
@@ -181,8 +200,7 @@ def report(source, event):
         status = "working"
     now = time.time()
     received = time.time_ns()
-    cwd = payload.get("cwd")
-    project = "".join(c for c in (Path(cwd).name if isinstance(cwd, str) and cwd else "") if ord(c) >= 32)
+    project = project_name(source, payload)
     private_directory(ROOT)
     directory = ROOT / "events"
     private_directory(directory)
@@ -207,6 +225,9 @@ def report(source, event):
             return
         if status == "idle" and old.get("status") in ("working", "blocked") and event in ("SessionStart", "sessionStart"):
             return
+        if project is None:
+            previous = old.get("project", "")
+            project = previous if isinstance(previous, str) else ""
         atomic_json(path, {"id": key, "source": source, "status": status, "sequence": received,
                            "timestamp": now, "project": project[:120], "ancestorPIDs": ancestry()})
 

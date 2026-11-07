@@ -171,8 +171,9 @@ if action == "doctor" {
     press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "manage-agent-integrations" }, "Manage Integrations")
     press(find(root) { [kAXRadioButtonRole, kAXButtonRole].contains(attribute($0, kAXRoleAttribute) as? String ?? "") && labels($0).contains("Desktop Clients") }, "Desktop Clients")
     func expect(_ source: String, label: String) -> AXUIElement {
+        let identifier = label == "Update" ? "desktop-hook-update-\(source)" : "desktop-hook-\(source)"
         for _ in 0..<80 {
-            if let button = find(root, matching: { attribute($0, kAXIdentifierAttribute) as? String == "desktop-hook-\(source)" && labels($0).contains(label) }),
+            if let button = find(root, matching: { attribute($0, kAXIdentifierAttribute) as? String == identifier && labels($0).contains(label) }),
                (attribute(button, kAXEnabledAttribute) as? NSNumber)?.boolValue == true { return button }
             waitFor(0.1)
         }
@@ -184,6 +185,22 @@ if action == "doctor" {
         _ = expect(source, label: "Remove")
         print("result: \(source) installed")
     }
+    guard let appURL = app.bundleURL else { require(false, "fixture app URL missing"); exit(1) }
+    let helper = appURL.deletingLastPathComponent().appendingPathComponent("desktop-data/desktop-hook.py")
+    require(FileManager.default.fileExists(atPath: helper.path), "owned desktop helper missing")
+    let handle = try FileHandle(forWritingTo: helper)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data("\n# Previous fixture helper version\n".utf8))
+    try handle.close()
+    press(find(root) { attribute($0, kAXIdentifierAttribute) as? String == "desktop-hooks-refresh" }, "Refresh outdated desktop helper")
+    _ = expect("codex", label: "Update")
+    _ = expect("codex", label: "Remove")
+    print("result: installed Codex hook offers Update and Remove")
+    press(expect("codex", label: "Update"), "Update Codex desktop helper")
+    for source in ["claude", "codex", "cursor", "copilot"] {
+        _ = expect(source, label: "Remove")
+    }
+    print("result: shared desktop helper updated for all installed sources")
     for source in ["claude", "codex", "cursor", "copilot"] {
         press(expect(source, label: "Remove"), "Remove \(source) desktop hook")
         _ = expect(source, label: "Install")

@@ -8,6 +8,7 @@ Users configure herdr, terminal selection, menu icon visibility and how long rec
 - `settings-duration-cancel`: enter 3 minutes, cancel and confirm 7 remains.
 - `settings-duration-bounds`: 1–1440 minutes, default 10; app clamps on Save.
 - `settings-connection`: edit executable/session or select an application; cancel preserves existing values.
+- `settings-terminal-app`: changing the `terminal-application` picker clears an incompatible `terminal-client` choice to Automatic. Test Cancel and Save separately; a closed same-app client remains unavailable until explicitly replaced.
 - `settings-icon`: hide or show the menu item; see [menu-bar.md](menu-bar.md).
 
 ## How to get to it (user POV)

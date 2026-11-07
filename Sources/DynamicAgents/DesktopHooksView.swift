@@ -14,7 +14,7 @@ struct IntegrationManagementView: View {
 }
 
 struct DesktopHooksView: View {
-    @State private var installed: [DesktopHookSource: Bool] = [:]
+    @State private var installations: [DesktopHookSource: DesktopHookInstallation] = [:]
     @State private var changing: DesktopHookSource?
     @State private var loading = false
     @State private var error: String?
@@ -29,15 +29,23 @@ struct DesktopHooksView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(source.label).font(.body.weight(.medium))
-                        Text(installed[source].map { $0 ? L10n.text("Hook Installed") : L10n.text("Not Installed") } ?? L10n.text("Unknown"))
+                        Text(installations[source].map { state in
+                            state.installed ? (state.current ? L10n.text("Hook Installed") : L10n.text("Update Available")) : L10n.text("Not Installed")
+                        } ?? L10n.text("Unknown"))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
                     if changing == source { ProgressView().controlSize(.small) }
-                    Button(installed[source] == true ? L10n.text("Remove") : L10n.text("Install")) {
-                        Task { await change(source) }
+                    if let state = installations[source], state.installed && !state.current {
+                        Button(L10n.text("Update")) { Task { await change(source, action: "install") } }
+                            .disabled(loading || changing != nil)
+                            .accessibilityIdentifier("desktop-hook-update-\(source.rawValue)")
                     }
-                    .disabled(loading || changing != nil || installed[source] == nil)
+                    Button(installations[source]?.installed == true ? L10n.text("Remove") : L10n.text("Install")) {
+                        let action = installations[source]?.installed == true ? "remove" : "install"
+                        Task { await change(source, action: action) }
+                    }
+                    .disabled(loading || changing != nil || installations[source] == nil)
                     .accessibilityIdentifier("desktop-hook-\(source.rawValue)")
                 }.padding(.vertical, 4)
             }.accessibilityIdentifier("desktop-hooks-list")
@@ -47,7 +55,9 @@ struct DesktopHooksView: View {
                 .font(.caption).foregroundStyle(.secondary)
             Text(L10n.text("Desktop actions open the host app; selecting an exact conversation is not supported."))
                 .font(.caption).foregroundStyle(.secondary)
-            Button(L10n.text("Refresh")) { Task { await refresh() } }.disabled(loading || changing != nil)
+            Button(L10n.text("Refresh")) { Task { await refresh() } }
+                .disabled(loading || changing != nil)
+                .accessibilityIdentifier("desktop-hooks-refresh")
         }
         .padding()
         .task { await refresh() }
@@ -57,18 +67,19 @@ struct DesktopHooksView: View {
         loading = true
         error = nil
         for source in DesktopHookSource.allCases {
-            do { installed[source] = try await DesktopHooks.configure(source, action: "status") }
-            catch { installed[source] = nil; self.error = error.localizedDescription }
+            do { installations[source] = try await DesktopHooks.installation(source) }
+            catch { installations[source] = nil; self.error = error.localizedDescription }
         }
         loading = false
     }
 
-    private func change(_ source: DesktopHookSource) async {
+    private func change(_ source: DesktopHookSource, action: String) async {
         guard changing == nil else { return }
         changing = source
         error = nil
         do {
-            installed[source] = try await DesktopHooks.configure(source, action: installed[source] == true ? "remove" : "install")
+            _ = try await DesktopHooks.configure(source, action: action)
+            await refresh()
             notice = L10n.text("Restart the client and review its hook permissions. New task events will appear automatically.")
         } catch { self.error = error.localizedDescription }
         changing = nil

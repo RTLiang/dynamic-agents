@@ -70,6 +70,11 @@ public enum DesktopHookSource: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public struct DesktopHookInstallation: Decodable, Equatable, Sendable {
+    public let installed: Bool
+    public let current: Bool
+}
+
 public enum DesktopHooks {
     public static var directory: URL {
         if let override = ProcessInfo.processInfo.environment["DYNAMIC_AGENTS_DATA_DIR"], !override.isEmpty {
@@ -87,13 +92,20 @@ public enum DesktopHooks {
         return bundle.url(forResource: "desktop-hook", withExtension: "py")
     }
 
+    public static func installation(_ source: DesktopHookSource) async throws -> DesktopHookInstallation {
+        try await request(source, action: "status")
+    }
+
     public static func configure(_ source: DesktopHookSource, action: String) async throws -> Bool {
+        try await request(source, action: action).installed
+    }
+
+    private static func request(_ source: DesktopHookSource, action: String) async throws -> DesktopHookInstallation {
         guard ["status", "install", "remove"].contains(action), let script else {
             throw HerdrError.message(L10n.text("The desktop hook helper is unavailable. Rebuild the app."))
         }
         let data = try await CommandRunner.run(executable: "/usr/bin/env", arguments: ["python3", script.path, action, source.rawValue])
-        struct Result: Decodable { let installed: Bool }
-        return try JSONDecoder().decode(Result.self, from: data).installed
+        return try JSONDecoder().decode(DesktopHookInstallation.self, from: data)
     }
 
     public static func capture(in directory: URL = Self.directory, at now: Date = .now) async -> (events: [DesktopHookEvent], processes: [ProcessRecord]) {

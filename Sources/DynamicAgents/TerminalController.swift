@@ -83,17 +83,18 @@ final class TerminalController {
         }
     }
 
-    struct FocusTarget {
-        let client: TerminalClient
-        let surface: TerminalSurface
-        let policy: TerminalFocusPolicy
-    }
+    typealias FocusTarget = TerminalFocusTarget
 
     func prepareFocus(paneID: String, preferredBundleID: String) throws -> FocusTarget {
-        let client = try selectClient(paneID: paneID, preferredBundleID: preferredBundleID)
-        let surfaces = try TerminalAutomation.surfaces(in: client.application)
-        let surface = try TerminalSurfaceResolver.surface(for: client, surfaces: surfaces)
-        return FocusTarget(client: client, surface: surface, policy: TerminalFocusPolicy.resolve(client: client, paneID: paneID))
+        try selectTarget(paneID: paneID, preferredBundleID: preferredBundleID)
+    }
+
+    private func selectTarget(paneID: String?, preferredBundleID: String) throws -> FocusTarget {
+        let snapshot = clients
+        let preference = preferredClientID
+        let anchor = try TerminalClientSelection.client(from: snapshot, paneID: paneID, preferredBundleID: preferredBundleID, preferredClientID: preference)
+        let surfaces = try TerminalAutomation.surfaces(in: anchor.application)
+        return try TerminalClientSelection.target(from: snapshot, surfaces: surfaces, paneID: paneID, preferredBundleID: preferredBundleID, preferredClientID: preference)
     }
 
     func present(_ target: FocusTarget, paneID: String, executable: String, session: String) throws {
@@ -106,39 +107,17 @@ final class TerminalController {
     }
 
     func attachmentIsFocused(paneID: String, preferredBundleID: String) throws -> Bool {
-        let client = try selectClient(paneID: paneID, preferredBundleID: preferredBundleID)
-        guard client.attachedPaneID == paneID else { return false }
-        let surface = try TerminalSurfaceResolver.surface(for: client, surfaces: TerminalAutomation.surfaces(in: client.application))
-        return try TerminalAutomation.focusedSurfaceID(in: client.application) == surface.id
-    }
-
-    private func selectClient(paneID: String?, preferredBundleID: String) throws -> TerminalClient {
-        let candidates = clients.filter { preferredBundleID.isEmpty || $0.application.bundleID == preferredBundleID }
-        if let paneID {
-            let attached = candidates.filter { $0.attachedPaneID == paneID }
-            if attached.count == 1 { return attached[0] }
-            if let selected = attached.first(where: { $0.id == preferredClientID }) { return selected }
-            if attached.count > 1 { throw HerdrError.message(L10n.text("Select the exact herdr window in settings; no other window will be changed.")) }
-        }
-        if !preferredClientID.isEmpty {
-            guard let selected = candidates.first(where: { $0.id == preferredClientID }) else {
-                throw HerdrError.message(L10n.text("The selected herdr window has closed. Select its replacement in settings."))
-            }
-            return selected
-        }
-        let normal = candidates.filter { $0.attachedPaneID == nil }
-        if normal.count == 1 { return normal[0] }
-        if candidates.count == 1 { return candidates[0] }
-        throw HerdrError.message(L10n.text("Select the exact herdr window in settings; no other window will be changed."))
+        let target = try selectTarget(paneID: paneID, preferredBundleID: preferredBundleID)
+        guard target.policy == .existingAttachment else { return false }
+        return try TerminalAutomation.focusedSurfaceID(in: target.client.application) == target.surface.id
     }
 
     @discardableResult
     func activate(preferredBundleID: String, paneID: String? = nil) async throws -> TerminalApplication {
-        let client = try selectClient(paneID: paneID, preferredBundleID: preferredBundleID)
-        let surface = try TerminalSurfaceResolver.surface(for: client, surfaces: TerminalAutomation.surfaces(in: client.application))
-        if let app = NSRunningApplication(processIdentifier: client.application.pid) { NSApp.yieldActivation(to: app) }
-        try TerminalAutomation.focus(surface, application: client.application)
-        return client.application
+        let target = try selectTarget(paneID: paneID, preferredBundleID: preferredBundleID)
+        if let app = NSRunningApplication(processIdentifier: target.client.application.pid) { NSApp.yieldActivation(to: app) }
+        try TerminalAutomation.focus(target.surface, application: target.client.application)
+        return target.client.application
     }
 
     static func isTerminal(_ bundleID: String) -> Bool { knownTerminals.contains(bundleID) }
