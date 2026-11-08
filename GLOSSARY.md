@@ -13,12 +13,8 @@ One round of a user's request and the agent's work before it returns control or 
 _Avoid_: Project, entire task
 
 **Running**:
-A coding session whose agent is actively processing a turn.
+A coding session with a turn still in progress, including pauses for permission or answers.
 _Avoid_: App open, session open
-
-**Needs Input**:
-A turn that is paused for a permission, answer or other user decision.
-_Avoid_: Completed, idle
 
 **Completed**:
 A recent turn has ended and its result is ready to review. This does not establish that a whole project is finished or that every requested outcome succeeded.

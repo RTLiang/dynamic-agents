@@ -52,7 +52,7 @@ class DesktopHooks(unittest.TestCase):
 
     def test_reports_contain_metadata_only_and_success_is_not_inferred_from_open_session(self):
         payload = self.user_payload("example-session", cwd="/example/project", prompt="PRIVATE PROMPT", tool_input={"secret": "PRIVATE TOOL INPUT"})
-        for event, expected in [("SessionStart", "idle"), ("UserPromptSubmit", "working"), ("PermissionRequest", "blocked"), ("PostToolUse", "working"), ("Stop", "done"), ("Interrupt", "idle"), ("SessionEnd", "ended")]:
+        for event, expected in [("SessionStart", "idle"), ("UserPromptSubmit", "working"), ("PermissionRequest", "working"), ("PostToolUse", "working"), ("Stop", "done"), ("Interrupt", "idle"), ("SessionEnd", "ended")]:
             self.assertEqual(json.loads(self.run_hook("report", "codex", event, payload=payload).stdout), {})
             files = list((self.directory / "data/events").glob("*.json"))
             self.assertEqual(len(files), 1)
@@ -61,6 +61,23 @@ class DesktopHooks(unittest.TestCase):
             self.assertNotIn("PRIVATE", text)
             self.assertNotIn("/example/project", text)
             self.assertEqual(json.loads(text)["project"], "project")
+
+    def test_permission_and_question_events_keep_the_unfinished_turn_running(self):
+        for source in ["pi", "claude", "codex", "cursor", "copilot"]:
+            with self.subTest(source=source):
+                session = "unfinished-" + source
+                payload = self.user_payload(session, status="completed")
+                key = hashlib.sha256((source + ":" + session).encode()).hexdigest()
+                for event, extra in [("UserPromptSubmit", {}), ("PermissionRequest", {}),
+                                     ("PreToolUse", {"tool_name": "request_user_input", "tool_use_id": "question"}),
+                                     ("PostToolUse", {"tool_name": "Read", "tool_use_id": "parallel"}),
+                                     ("PostToolUse", {"tool_name": "request_user_input", "tool_use_id": "question"})]:
+                    self.run_hook("report", source, event, payload={**payload, **extra})
+                    record = json.loads((self.directory / "data/events" / (key + ".json")).read_text())
+                    self.assertEqual(record["status"], "working")
+                    self.assertNotIn("completedAt", record)
+                self.run_hook("report", source, "Stop", payload=payload)
+                self.assertEqual(json.loads((self.directory / "data/events" / (key + ".json")).read_text())["status"], "done")
 
     def test_completion_time_survives_duplicate_stop_viewing_and_close_but_new_work_clears_it(self):
         payload = self.user_payload("completion-example")
@@ -305,7 +322,7 @@ class DesktopHooks(unittest.TestCase):
 
     def test_pi_metadata_and_final_outcomes(self):
         payload = {"session_id": "pi-example", "runtime_pid": os.getpid(), "title": "Example\nName", "cwd": "/example/project", "prompt": "PRIVATE PROMPT"}
-        for event, status in [("SessionStart", "idle"), ("UserPromptSubmit", "working"), ("PermissionRequest", "blocked"), ("PostToolUse", "working"), ("Stop", "done"), ("Interrupt", "idle"), ("StopFailure", "unknown"), ("SessionEnd", "ended")]:
+        for event, status in [("SessionStart", "idle"), ("UserPromptSubmit", "working"), ("PermissionRequest", "working"), ("PostToolUse", "working"), ("Stop", "done"), ("Interrupt", "idle"), ("StopFailure", "unknown"), ("SessionEnd", "ended")]:
             self.run_hook("report", "pi", event, payload=payload)
             path = next((self.directory / "data/events").glob("*.json"))
             text = path.read_text()

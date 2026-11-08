@@ -1,15 +1,20 @@
 import Foundation
 
 public enum AgentStatus: String, CaseIterable, Sendable, Codable {
-    case working, blocked, done, idle, unknown
+    case working, done, idle, unknown
 
-    public init(serverValue: String?) { self = Self(rawValue: serverValue ?? "") ?? .unknown }
+    public init(serverValue: String?) {
+        self = serverValue == "blocked" ? .working : Self(rawValue: serverValue ?? "") ?? .unknown
+    }
+    public init(from decoder: Decoder) throws {
+        self.init(serverValue: try decoder.singleValueContainer().decode(String.self))
+    }
     public var priority: Int {
-        switch self { case .working: 0; case .blocked: 1; case .done: 2; case .idle: 3; case .unknown: 4 }
+        switch self { case .working: 0; case .done: 1; case .idle: 2; case .unknown: 3 }
     }
     public var label: String { label(locale: nil) }
     public func label(locale: Locale?) -> String {
-        switch self { case .blocked: L10n.text("Needs Input", locale: locale); case .done: L10n.text("Completed", locale: locale); case .working: L10n.text("Running", locale: locale); case .idle: L10n.text("Idle", locale: locale); case .unknown: L10n.text("Unknown", locale: locale) }
+        switch self { case .done: L10n.text("Completed", locale: locale); case .working: L10n.text("Running", locale: locale); case .idle: L10n.text("Idle", locale: locale); case .unknown: L10n.text("Unknown", locale: locale) }
     }
 }
 

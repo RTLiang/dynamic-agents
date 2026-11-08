@@ -14,7 +14,7 @@ Reports contain metadata only: hashed identity, source, state, event time/sequen
 
 Host resolution prefers the nearest regular App in the observed ancestry, validated against process start time. Detached CLI processes may use a recognized bundle hint from __CFBundleIdentifier or TERM_PROGRAM; this identifies an App, not a terminal client or window. Duplicate App matches, unknown hints and restarted identities fail safely. A missing App does not stop monitoring a separately verified live Pi/Codex runtime. Opening activates the existing host process and issues no keyboard, mouse, window, tab or conversation command.
 
-Pi reports running on agent_start and completion on agent_settled. Waiting, cancellation, errors, session switch and shutdown have distinct transitions. Final settlement avoids false completion during retries. The extension reads session metadata and runtime PID, not messages or transcripts.
+Pi reports running on agent_start and completion on agent_settled. Permissions and user questions remain running until the turn ends. Cancellation, errors, session switch and shutdown have distinct transitions. Final settlement avoids false completion during retries. The extension reads session metadata and runtime PID, not messages or transcripts.
 
 Codex runtime validation checks the observed executable, process start time and parent chain. App branding is recognized by bundle identity. Saved user titles come from a bounded title index and affect presentation only.
 

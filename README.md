@@ -6,7 +6,7 @@ Follow your coding agents from a native Mac dashboard and system Live Activity.
 
 **[Download the latest DMG](https://github.com/RTLiang/dynamic-agents/releases/latest)**
 
-Dynamic Agents receives lifecycle events from **Pi, Claude Code, Codex App / CLI, Cursor and VS Code Copilot**. It shows which sessions are running, waiting for input, or recently completed. Clicking a session activates its host App.
+Dynamic Agents receives lifecycle events from **Pi, Claude Code, Codex App / CLI, Cursor and VS Code Copilot**. It shows running sessions and recent completions. Clicking a session activates its host App.
 
 ## Requirements and installation
 
@@ -22,12 +22,11 @@ Hook installation preserves unrelated configuration and creates local backups. I
 
 ## Session states
 
-The default order is **Running → Needs Input → Completed → Idle → Unknown**. Search, filter or sort the table to find a session.
+The default order is **Running → Completed → Idle → Unknown**. Search, filter or sort the table to find a session.
 
 | State | Meaning |
 | --- | --- |
-| Running | The agent is processing a turn. |
-| Needs Input | Work is paused for your permission, answer or decision. |
+| Running | The current turn is still in progress, including pauses for permissions or answers. |
 | Completed | A turn ended recently. This describes a turn boundary, not project completion or a guarantee of success. |
 | Idle | The session is available without active work or a current completion reminder. |
 | Unknown | Current work cannot be verified; it is not counted as running. |
@@ -42,7 +41,7 @@ The host is resolved from process ancestry. For detached CLI processes, a recogn
 
 ## Live Activities and language
 
-Live Activities show **running sessions and recent completions**. Waiting and idle sessions remain in the dashboard and menu. With no eligible sessions, the activity hides and monitoring continues. Hiding the menu icon or closing the dashboard also keeps monitoring active.
+Live Activities show **running sessions and recent completions**. Idle sessions remain in the dashboard and menu. With no eligible sessions, the activity hides and monitoring continues. Hiding the menu icon or closing the dashboard also keeps monitoring active.
 
 The app and Widget support **English and Simplified Chinese**, following the system or the app language chosen in **System Settings → General → Language & Region → Applications**. Session names and project names retain their original text.
 

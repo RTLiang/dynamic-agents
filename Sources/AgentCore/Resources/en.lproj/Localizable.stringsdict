@@ -24,17 +24,6 @@
       <key>other</key><string>%lld agents</string>
     </dict>
   </dict>
-  <key>agent.waiting</key>
-  <dict>
-    <key>NSStringLocalizedFormatKey</key><string>%#@count@</string>
-    <key>count</key>
-    <dict>
-      <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
-      <key>NSStringFormatValueTypeKey</key><string>lld</string>
-      <key>one</key><string>%lld agent needs input</string>
-      <key>other</key><string>%lld agents need input</string>
-    </dict>
-  </dict>
   <key>agent.running</key>
   <dict>
     <key>NSStringLocalizedFormatKey</key><string>%#@count@</string>

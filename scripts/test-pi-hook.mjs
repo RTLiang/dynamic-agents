@@ -32,7 +32,7 @@ try {
     await emit("agent_start");
     assert.equal(record().status, "working");
     await emit("ui_prompt_start");
-    assert.equal(record().status, "blocked");
+    assert.equal(record().status, "working");
     await emit("ui_prompt_end");
     assert.equal(record().status, "working");
     await emit("turn_end", { outcome: "error", get entries() { throw new Error("Must not read entries"); } });

@@ -16,12 +16,26 @@ private func session(_ index: Int = 1, status: AgentStatus = .working, completed
     #expect(first.id.hasPrefix("hook:"))
 }
 
-@Test func runningPrecedesWaitingCompletedAndIdle() {
-    #expect(AgentStatus.allCases.sorted { $0.priority < $1.priority } == [.working, .blocked, .done, .idle, .unknown])
-    let state = AgentActivityState(agents: [session(1, status: .idle), session(2, status: .done), session(3), session(4, status: .blocked)])
-    #expect(state.items.map(\.status) == [.working, .blocked, .done])
+@Test func runningPrecedesCompletedAndIdle() {
+    #expect(AgentStatus.allCases.sorted { $0.priority < $1.priority } == [.working, .done, .idle, .unknown])
+    let state = AgentActivityState(agents: [session(1, status: .idle), session(2, status: .done), session(3), session(4)])
+    #expect(state.items.map(\.status) == [.working, .working, .done])
     #expect(state.status == .working)
-    #expect(state.headline == L10n.format("agent.running", Int64(1)))
+    #expect(state.headline == L10n.format("agent.running", Int64(2)))
+}
+
+@Test func legacyWaitingPayloadsBecomeRunningWithoutASeparateCounter() throws {
+    #expect(AgentStatus(serverValue: "blocked") == .working)
+    #expect(try JSONDecoder().decode(AgentStatus.self, from: Data("\"blocked\"".utf8)) == .working)
+    let object: [String: Any] = ["working": 0, "blocked": 1, "done": 0, "total": 1, "connected": true,
+                               "languageIdentifier": "en", "items": [["id": "hook:" + String(repeating: "a", count: 40),
+                                   "title": "Example", "kind": "codex", "project": "Example", "status": "blocked"]]]
+    let state = try JSONDecoder().decode(AgentActivityState.self, from: JSONSerialization.data(withJSONObject: object))
+    #expect(state.working == 1 && state.status == .working && state.prominentCount == 1)
+    #expect(state.items.first?.status == .working && state.compactLabels() == ["1 Run"])
+    let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
+    #expect(encoded["blocked"] == nil)
+    #expect(!String(decoding: try JSONEncoder().encode(state), as: UTF8.self).contains("blocked"))
 }
 
 @Test func reportedCompletionExpiresWithoutResetOnReadOrRestart() {
@@ -70,7 +84,7 @@ private func session(_ index: Int = 1, status: AgentStatus = .working, completed
     let feed = AgentActivityFeed()
     #expect(feed.dashboardAgents(from: [closed], at: now.addingTimeInterval(599)).count == 1)
     #expect(feed.dashboardAgents(from: [closed], at: now.addingTimeInterval(600)).isEmpty)
-    for status in [AgentStatus.working, .idle, .blocked, .unknown] {
+    for status in [AgentStatus.working, .idle, .unknown] {
         let unavailable = session(status: status, available: false)
         #expect(feed.dashboardAgents(from: [unavailable], at: now).isEmpty)
         #expect(feed.agents(from: [unavailable], at: now).isEmpty)
@@ -79,10 +93,10 @@ private func session(_ index: Int = 1, status: AgentStatus = .working, completed
 
 @Test func onlyRunningAndRecentCompletionsBelongInLiveActivities() {
     let now = Date.now
-    let rows = [session(1), session(2, status: .blocked), session(3, status: .idle), session(4, status: .unknown), session(5, status: .done, completedAt: now)]
+    let rows = [session(1), session(2, status: AgentStatus(serverValue: "blocked")), session(3, status: .idle), session(4, status: .unknown), session(5, status: .done, completedAt: now)]
     let feed = AgentActivityFeed()
     #expect(feed.dashboardAgents(from: rows, at: now).count == 5)
-    #expect(feed.agents(from: rows, at: now).map(\.status) == [.working, .done])
+    #expect(feed.agents(from: rows, at: now).map(\.status) == [.working, .working, .done])
     #expect(feed.agents(from: [session(status: .done)], at: now).isEmpty)
     #expect(feed.agents(from: [session(status: .done, completedAt: now.addingTimeInterval(1))], at: now).isEmpty)
 }

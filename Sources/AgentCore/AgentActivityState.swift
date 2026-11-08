@@ -12,7 +12,6 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
         public var kindName: String { displayAgent ?? AgentKind(rawValue: kind).displayName }
     }
     public var working: Int
-    public var blocked: Int
     public var done: Int
     public var total: Int
     public var connected: Bool
@@ -22,7 +21,6 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
     public var headline: String {
         if !connected { return L10n.text("Hook monitoring unavailable") }
         if working > 0 { return L10n.format("agent.running", Int64(working)) }
-        if blocked > 0 { return L10n.format("agent.waiting", Int64(blocked)) }
         if done > 0 { return L10n.format("agent.completed", Int64(done)) }
         return total > 0 ? L10n.text("All agents are ready") : L10n.text("Waiting for agents")
     }
@@ -37,14 +35,12 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
 
     public var prominentCount: Int {
         if working > 0 { return working }
-        if blocked > 0 { return blocked }
         if done > 0 { return done }
         return total
     }
     public var status: AgentStatus {
         if !connected { return .unknown }
         if working > 0 { return .working }
-        if blocked > 0 { return .blocked }
         if done > 0 { return .done }
         return .idle
     }
@@ -53,7 +49,6 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
         self.languageIdentifier = languageIdentifier
         self.connected = connected
         working = agents.filter { $0.status == .working }.count
-        blocked = agents.filter { $0.status == .blocked }.count
         done = agents.filter { $0.status == .done }.count
         total = agents.count
         let ordered = agents.sorted {
@@ -73,6 +68,25 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
             remaining -= encoded.count + 1
         }
     }
+    private enum CodingKeys: String, CodingKey {
+        case working, done, total, connected, items, languageIdentifier
+    }
+    private enum LegacyKeys: String, CodingKey { case blocked }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+        let running = max(0, try values.decode(Int.self, forKey: .working))
+        let previous = max(0, try legacy.decodeIfPresent(Int.self, forKey: .blocked) ?? 0)
+        let (sum, overflow) = running.addingReportingOverflow(previous)
+        working = overflow ? Int.max : sum
+        done = try values.decode(Int.self, forKey: .done)
+        total = try values.decode(Int.self, forKey: .total)
+        connected = try values.decode(Bool.self, forKey: .connected)
+        items = try values.decode([Item].self, forKey: .items)
+        languageIdentifier = try values.decodeIfPresent(String.self, forKey: .languageIdentifier)
+    }
+
     private static func bounded(_ text: String, bytes: Int) -> String {
         // Bound UTF-8 rather than grapheme count: one composed character can contain
         // thousands of combining scalars. Strip controls, which JSON otherwise escapes.

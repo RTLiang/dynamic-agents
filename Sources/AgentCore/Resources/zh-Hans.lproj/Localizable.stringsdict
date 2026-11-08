@@ -22,16 +22,6 @@
       <key>other</key><string>%lld 个 Agent</string>
     </dict>
   </dict>
-  <key>agent.waiting</key>
-  <dict>
-    <key>NSStringLocalizedFormatKey</key><string>%#@count@</string>
-    <key>count</key>
-    <dict>
-      <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
-      <key>NSStringFormatValueTypeKey</key><string>lld</string>
-      <key>other</key><string>%lld 个 agent 等待输入</string>
-    </dict>
-  </dict>
   <key>agent.running</key>
   <dict>
     <key>NSStringLocalizedFormatKey</key><string>%#@count@</string>

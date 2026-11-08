@@ -43,9 +43,6 @@ struct DynamicAgentsApp: App {
             AgentMenu(store: store)
         } label: {
             Image(nsImage: MenuBarIcon.image)
-            if store.connected, store.state.blocked > 0 {
-                Text("\(store.state.blocked)")
-            }
         }.menuBarExtraStyle(.menu)
     }
 }

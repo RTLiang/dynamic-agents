@@ -85,6 +85,7 @@ struct DashboardView: View {
                         Text(status.label).tag(Optional(status))
                     }
                 }.pickerStyle(.menu)
+                .accessibilityIdentifier("agent-status-filter")
             }
             ToolbarItem {
                 Button(L10n.text("Open App"), systemImage: "arrow.up.forward.app") {

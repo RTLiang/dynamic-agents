@@ -72,7 +72,14 @@ if action == "doctor" {
     require(node("agents-table") != nil, "dashboard missing")
     checkRows(0)
     require(!strings().contains(where: { $0.localizedCaseInsensitiveContains("herdr") }), "removed integration leaked into UI")
-    print("ready: empty hook-only dashboard and owned two-window host")
+    press(ready("agent-status-filter"), "Status filter")
+    let options = all(root).filter { attribute($0, kAXRoleAttribute) as? String == kAXMenuItemRole }.flatMap(labels)
+    let expected = zh ? ["所有状态", "运行中", "已完成", "空闲", "未知状态"] : ["All Statuses", "Running", "Completed", "Idle", "Unknown"]
+    require(expected.allSatisfy(options.contains), "status filter options missing")
+    require(!options.contains(zh ? "等待输入" : "Needs Input"), "removed input status remains in filter")
+    save("status-filter")
+    press(all(root).first { attribute($0, kAXRoleAttribute) as? String == kAXMenuItemRole && labels($0).contains(expected[0]) }, "All Statuses")
+    print("ready: empty hook-only dashboard, four statuses and owned two-window host")
 } else if action == "snapshot" {
     print(String(data: try JSONSerialization.data(withJSONObject: tree(root), options: [.prettyPrinted, .sortedKeys]), encoding: .utf8)!)
 } else if action == "press" {

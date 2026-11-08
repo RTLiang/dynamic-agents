@@ -334,8 +334,6 @@ def report(source, event):
             status = "done"
     elif event == "StopFailure":
         status = "unknown"
-    elif event == "PermissionRequest":
-        status = "blocked"
     else:
         status = "working"
     now = time.time()

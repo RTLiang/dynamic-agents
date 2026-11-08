@@ -50,7 +50,7 @@ public struct DesktopHookEvent: Decodable, Sendable {
         }
         let host = live ? resolvedHost : nil
         let rawStatus = status == "ended" && completionTime != nil ? AgentStatus.done : AgentStatus(serverValue: status)
-        let effective = !live && (rawStatus == .working || rawStatus == .blocked) ? AgentStatus.unknown : rawStatus
+        let effective = !live && rawStatus == .working ? AgentStatus.unknown : rawStatus
         let kind = source == "copilot" ? "copilot" : source
         let kindName = AgentKind(rawValue: kind).displayName
         let displayName: String?
