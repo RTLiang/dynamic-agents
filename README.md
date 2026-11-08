@@ -32,7 +32,7 @@ The default order is **Running → Needs Input → Completed → Idle → Unknow
 | Idle | The session is available without active work or a current completion reminder. |
 | Unknown | Current work cannot be verified; it is not counted as running. |
 
-Completion reminders last **10 minutes** by default. Change **Show Completed For** in Settings from **1–1440 minutes**. Viewing a result keeps the original timer. After expiry, available sessions become Idle and closed sessions disappear. Interrupted Pi runs become Idle; failed runs do not create a completion reminder. Codex internal memory, title and subagent maintenance are excluded when identified by structured session metadata.
+Completion reminders last **10 minutes** by default. Change **Show Completed For** in Settings from **1–1440 minutes**. Viewing a result keeps the original timer. After expiry, available sessions become Idle and closed sessions disappear. Interrupted Pi runs become Idle; failed runs do not create a completion reminder. Codex requires verified user-session metadata. Internal memory/title/subagent work and sessions with unavailable metadata are excluded, including ephemeral workers without a rollout. User-created ephemeral sessions without verifiable metadata are also excluded.
 
 ## Open the host App
 

@@ -103,7 +103,7 @@ if action == "doctor" {
     try producer.run(); producer.waitUntilExit(); require(producer.terminationStatus == 0, "memory fixture failed")
     wait(1.2); checkRows(3)
     let values = strings()
-    require(!values.contains("Background memory example") && !values.contains("Background legacy memory example"), "background sessions visible")
+    require(!["Background memory example", "Background legacy memory example", "Ephemeral memory example", "Legacy ephemeral memory example"].contains(where: values.contains), "background sessions visible")
     guard let table = node("agents-table") else { exit(1) }
     let tableValues = all(table).flatMap(labels)
     guard let work = tableValues.firstIndex(of: "Build example"), let done = tableValues.firstIndex(of: "Memory project example"), let idle = tableValues.firstIndex(of: "Review example") else { require(false, "expected fixture sessions absent"); exit(1) }
@@ -126,6 +126,12 @@ if action == "doctor" {
     for _ in 0..<30 { if NSWorkspace.shared.frontmostApplication?.processIdentifier == hostPID { break }; wait(0.1) }
     wait()
     let after = try hostState()
+    if NSWorkspace.shared.frontmostApplication?.processIdentifier != hostPID || app.isActive {
+        save("failed-app-activation")
+        let diagnostic: [String: Any] = ["expectedHostPID": hostPID, "frontPID": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
+                                       "frontBundle": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "", "before": before, "after": after]
+        try JSONSerialization.data(withJSONObject: diagnostic, options: [.prettyPrinted]).write(to: evidence.appendingPathComponent("failed-app-activation-state.json"))
+    }
     require(NSWorkspace.shared.frontmostApplication?.processIdentifier == hostPID && !app.isActive, "wrong host app activated")
     require(before["lastKeyWindow"] as? String == after["lastKeyWindow"] as? String && after["windowCount"] as? Int == 2, "host window selection changed")
     try JSONSerialization.data(withJSONObject: ["before": before, "after": after, "passed": true], options: [.prettyPrinted]).write(to: evidence.appendingPathComponent("app-only-activation.json"))

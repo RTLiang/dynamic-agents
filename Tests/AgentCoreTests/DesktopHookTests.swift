@@ -4,11 +4,24 @@ import Testing
 
 private let hookProcesses = [ProcessRecord(pid: 51, parentPID: 50, executable: "/usr/local/bin/codex", startedAt: .distantPast)]
 
-private func hookEvent(status: String, source: String = "codex", age: TimeInterval = 0, ancestors: [Int32] = [51, 50]) throws -> DesktopHookEvent {
-    let data: [String: Any] = ["id": String(repeating: "a", count: 64), "source": source, "status": status,
+private func hookEvent(status: String, source: String = "codex", age: TimeInterval = 0, ancestors: [Int32] = [51, 50], classification: String? = "user") throws -> DesktopHookEvent {
+    var data: [String: Any] = ["id": String(repeating: "a", count: 64), "source": source, "status": status,
                                "sequence": 1234, "timestamp": Date.now.timeIntervalSince1970 - age,
                                "project": "Example", "ancestorPIDs": ancestors]
+    if let classification { data["codexSessionKind"] = classification }
     return try JSONDecoder().decode(DesktopHookEvent.self, from: JSONSerialization.data(withJSONObject: data))
+}
+
+@Test func codexMustBeVerifiedBeforeItEntersDashboardOrLiveActivity() throws {
+    let app = HostApplication(pid: 50, bundleID: "example.desktop", name: "Example", path: "/Applications/Example.app")
+    for status in ["working", "blocked", "done", "idle"] {
+        for classification in [nil, "background", "unverified", "unknown"] as [String?] {
+            let event = try hookEvent(status: status, classification: classification)
+            #expect(!event.isCurrent(at: .now))
+            #expect(event.agent(applications: [app], now: .now, processes: hookProcesses) == nil)
+        }
+        #expect(try hookEvent(status: status).isCurrent(at: .now))
+    }
 }
 
 @Test func desktopEventUsesObservedHostAndNeverTreatsOpenAppAsTaskActivity() throws {

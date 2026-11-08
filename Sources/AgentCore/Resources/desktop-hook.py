@@ -179,7 +179,7 @@ def configure(source, action):
     enabled[source] = action == "install"
     atomic_json(enabled_path, enabled)
     if source == "codex" and action == "install":
-        suppress_legacy_codex_background_reports()
+        reconcile_codex_reports()
     print(json.dumps({"installed": action == "install", "current": action == "install"}))
 
 
@@ -252,7 +252,7 @@ def codex_metadata(path):
         return None
 
 
-def suppress_legacy_codex_background_reports():
+def reconcile_codex_reports():
     directory = ROOT / "events"
     reports = {}
     for path in directory.glob("*.json"):
@@ -261,19 +261,23 @@ def suppress_legacy_codex_background_reports():
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_size >= 8192:
                 continue
             value = json.loads(path.read_bytes())
-            if isinstance(value, dict) and value.get("source") == "codex" and value.get("status") != "ended":
+            if isinstance(value, dict) and value.get("source") == "codex" and value.get("id") == path.stem:
                 reports[path.stem] = path
         except (OSError, ValueError):
             continue
     if not reports:
         return
+    classifications = {}
     sessions = config_path("codex").parent / "sessions"
     for path in sessions.glob("*/*/*/rollout-*.jsonl"):
         session = path.stem[-36:]
         key = hashlib.sha256(("codex:" + session).encode()).hexdigest()
-        if key not in reports or codex_metadata(str(path)) != (session, True):
+        if key not in reports:
             continue
-        report_path = reports[key]
+        metadata = codex_metadata(str(path))
+        if metadata is not None and metadata[0] == session:
+            classifications[key] = "background" if metadata[1] else "user"
+    for key, report_path in reports.items():
         lock_path = directory / (key + ".lock")
         if lock_path.is_symlink():
             continue
@@ -284,8 +288,15 @@ def suppress_legacy_codex_background_reports():
                 if report_path.is_symlink():
                     continue
                 value = json.loads(report_path.read_bytes())
-                if isinstance(value, dict) and value.get("id") == key and value.get("source") == "codex":
-                    atomic_json(report_path, {**value, "status": "ended", "codexSessionKind": "background"})
+                if not isinstance(value, dict) or value.get("id") != key or value.get("source") != "codex":
+                    continue
+                previous = value.get("codexSessionKind")
+                kind = "background" if previous == "background" else classifications.get(key, previous if previous == "user" else "unverified")
+                value["codexSessionKind"] = kind
+                if kind != "user":
+                    value.update(status="ended", ancestorPIDs=[])
+                    value.pop("completedAt", None)
+                atomic_json(report_path, value)
         except (OSError, ValueError):
             continue
 
@@ -305,7 +316,7 @@ def report(source, event):
         session = payload.get("session_id") or payload.get("sessionId")
     if not isinstance(session, str) or not session or len(session) > 256:
         return
-    session_kind = None
+    session_kind = "unverified" if source == "codex" else None
     if source == "codex":
         metadata = codex_metadata(payload.get("transcript_path"))
         if metadata is not None:
@@ -354,9 +365,9 @@ def report(source, event):
             return
         if source == "codex":
             previous_kind = old.get("codexSessionKind")
-            if previous_kind == "background" or session_kind is None and previous_kind == "user":
+            if previous_kind == "background" or session_kind == "unverified" and previous_kind == "user":
                 session_kind = previous_kind
-            if session_kind == "background":
+            if session_kind != "user":
                 status = "ended"
         if status == "idle" and old.get("status") in ("working", "blocked") and event in ("SessionStart", "sessionStart"):
             return
@@ -365,7 +376,7 @@ def report(source, event):
             project = previous if isinstance(previous, str) else ""
         record = {"id": key, "source": source, "status": status, "sequence": received,
                   "timestamp": now, "project": project[:120],
-                  "ancestorPIDs": [] if session_kind == "background" else ancestry()}
+                  "ancestorPIDs": [] if session_kind in ("background", "unverified") else ancestry()}
         hint = host_app_hint()
         if hint is not None:
             record["hostBundleIDHint"] = hint
@@ -374,7 +385,7 @@ def report(source, event):
             previous_completion = None
         if status == "done":
             record["completedAt"] = previous_completion if old.get("status") == "done" and previous_completion is not None else now
-        elif status in ("idle", "ended") and event != "Interrupt" and session_kind != "background" and previous_completion is not None:
+        elif status in ("idle", "ended") and event != "Interrupt" and session_kind not in ("background", "unverified") and previous_completion is not None:
             record["completedAt"] = previous_completion
         if source == "pi":
             title = payload.get("title")

@@ -31,6 +31,8 @@ sessions = [
     ("00000000-0000-4000-8000-000000000001", "Memory project example", "vscode", "user"),
     ("00000000-0000-4000-8000-000000000002", "Background memory example", {"internal": "memory_consolidation"}, "background"),
     ("00000000-0000-4000-8000-000000000003", "Background legacy memory example", {"subagent": "memory_consolidation"}, "background"),
+    ("00000000-0000-4000-8000-000000000004", "Ephemeral memory example", None, "unverified"),
+    ("00000000-0000-4000-8000-000000000005", "Legacy ephemeral memory example", None, "unverified"),
 ]
 index = config / ".codex/session_index.jsonl"
 index.parent.mkdir(parents=True, exist_ok=True)
@@ -41,12 +43,13 @@ records = []
 for session, title, source, kind in sessions:
     transcript = index.parent / "sessions/2026/01/01" / ("rollout-fixture-" + session + ".jsonl")
     transcript.parent.mkdir(parents=True, exist_ok=True)
-    transcript.write_text(json.dumps({"type": "session_meta", "payload": {
-        "id": session, "source": source
-    }}) + "\n")
+    if source is not None:
+        transcript.write_text(json.dumps({"type": "session_meta", "payload": {
+            "id": session, "source": source
+        }}) + "\n")
     for event, with_metadata in [("UserPromptSubmit", True), ("Stop", True), ("Stop", False)]:
         payload = {"session_id": session, "cwd": "/example/memory"}
-        if with_metadata:
+        if with_metadata and source is not None:
             payload["transcript_path"] = str(transcript)
         result = subprocess.run([sys.executable, str(helper), "report", "codex", event],
                                 input=json.dumps(payload), text=True, capture_output=True,
@@ -58,9 +61,14 @@ for session, title, source, kind in sessions:
     record = json.loads((data / "events" / (key + ".json")).read_bytes())
     if record.get("codexSessionKind") != kind or record.get("status") != ("done" if kind == "user" else "ended"):
         sys.exit("FAIL: wrong lifecycle classification for " + title)
+    if title == "Legacy ephemeral memory example":
+        # Replay the former helper's false completion at the production collector boundary.
+        record.pop("codexSessionKind", None)
+        record.update(status="done", completedAt=record["timestamp"])
+        (data / "events" / (key + ".json")).write_text(json.dumps(record))
     records.append(record)
 (evidence / "desktop-memory-inputs.json").write_text(json.dumps(actions, indent=2) + "\n")
 (evidence / "desktop-memory-records.json").write_text(json.dumps(records, indent=2) + "\n")
 print("action: deliver prompt, stop and sparse stop through the UI-installed Codex hook")
-print("result: user completion retained; internal and subagent memory records ended")
+print("result: user completion retained; metadata-backed, ephemeral and legacy memory records excluded")
 print("PASS: desktop-memory-boundary (dashboard assertion follows in AX)")

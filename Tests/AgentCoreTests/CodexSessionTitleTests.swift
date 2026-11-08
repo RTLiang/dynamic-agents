@@ -79,7 +79,7 @@ private func fixture(_ body: (URL) async throws -> Void) async throws {
 }
 
 @Test func sessionTitlesChangePresentationWithoutChangingSessionIdentityOrState() throws {
-    let json: [String: Any] = ["id": hookID("one"), "source": "codex", "status": "done", "sequence": 1,
+    let json: [String: Any] = ["id": hookID("one"), "source": "codex", "codexSessionKind": "user", "status": "done", "sequence": 1,
                                "timestamp": Date.now.timeIntervalSince1970, "project": "Example", "ancestorPIDs": []]
     let event = try JSONDecoder().decode(DesktopHookEvent.self, from: JSONSerialization.data(withJSONObject: json))
     let original = try #require(event.agent(applications: [], now: .now))

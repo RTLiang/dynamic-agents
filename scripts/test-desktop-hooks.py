@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Exercise desktop hook configuration and reports in private disposable directories."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -26,6 +27,11 @@ class DesktopHooks(unittest.TestCase):
         return subprocess.run([sys.executable, str(SCRIPT), *args], input=json.dumps(payload or {}),
                               capture_output=True, text=True, env=environment or self.environment, timeout=4, check=True)
 
+    def user_payload(self, session, **fields):
+        path = self.directory / (hashlib.sha256(session.encode()).hexdigest() + ".jsonl")
+        path.write_text(json.dumps({"type": "session_meta", "payload": {"id": session, "source": "vscode", "thread_source": "user"}}) + "\n")
+        return {"session_id": session, "transcript_path": str(path), **fields}
+
     def test_install_and_remove_preserve_existing_user_and_herdr_hooks(self):
         for source, name in [("claude", ".claude/settings.json"), ("codex", ".codex/hooks.json"), ("cursor", ".cursor/hooks.json"), ("copilot", ".copilot/hooks/dynamic-agents.json")]:
             with self.subTest(source=source):
@@ -45,7 +51,7 @@ class DesktopHooks(unittest.TestCase):
                 self.assertFalse(json.loads(self.run_hook("status", source).stdout)["installed"])
 
     def test_reports_contain_metadata_only_and_success_is_not_inferred_from_open_session(self):
-        payload = {"session_id": "example-session", "cwd": "/example/project", "prompt": "PRIVATE PROMPT", "tool_input": {"secret": "PRIVATE TOOL INPUT"}}
+        payload = self.user_payload("example-session", cwd="/example/project", prompt="PRIVATE PROMPT", tool_input={"secret": "PRIVATE TOOL INPUT"})
         for event, expected in [("SessionStart", "idle"), ("UserPromptSubmit", "working"), ("PermissionRequest", "blocked"), ("PostToolUse", "working"), ("Stop", "done"), ("Interrupt", "idle"), ("SessionEnd", "ended")]:
             self.assertEqual(json.loads(self.run_hook("report", "codex", event, payload=payload).stdout), {})
             files = list((self.directory / "data/events").glob("*.json"))
@@ -57,7 +63,7 @@ class DesktopHooks(unittest.TestCase):
             self.assertEqual(json.loads(text)["project"], "project")
 
     def test_completion_time_survives_duplicate_stop_viewing_and_close_but_new_work_clears_it(self):
-        payload = {"session_id": "completion-example"}
+        payload = self.user_payload("completion-example")
         self.run_hook("report", "codex", "Stop", payload=payload)
         path = next((self.directory / "data/events").glob("*.json"))
         event = json.loads(path.read_text())
@@ -91,6 +97,28 @@ class DesktopHooks(unittest.TestCase):
         self.assertEqual(event["status"], "unknown")
         result = self.run_hook("report", "cursor", "beforeSubmitPrompt", payload=payload)
         self.assertEqual(json.loads(result.stdout), {"continue": True})
+
+    def test_codex_ephemeral_memory_without_rollout_is_not_a_user_session(self):
+        payload = {"session_id": "ephemeral-worker", "cwd": str(self.directory / "config/.codex/memories"), "transcript_path": None}
+        for event in ["UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd"]:
+            self.run_hook("report", "codex", event, payload=payload)
+            record = json.loads(next((self.directory / "data/events").glob("*.json")).read_text())
+            self.assertEqual(record["status"], "ended", "Memory worker without a rollout was counted as a user session")
+            self.assertEqual(record.get("codexSessionKind"), "unverified")
+            self.assertNotIn("completedAt", record)
+            self.assertEqual(record["ancestorPIDs"], [])
+
+    def test_codex_unverified_session_can_become_a_verified_user_later(self):
+        payload = {"session_id": "late-user", "cwd": "/example/memory"}
+        self.run_hook("report", "codex", "Stop", payload=payload)
+        path = next((self.directory / "data/events").glob("*.json"))
+        self.assertEqual(json.loads(path.read_text())["status"], "ended")
+        transcript = self.directory / "late.jsonl"
+        transcript.write_text(json.dumps({"type": "session_meta", "payload": {"id": "late-user", "source": "vscode", "thread_source": "user"}}) + "\n")
+        self.run_hook("report", "codex", "UserPromptSubmit", payload={**payload, "transcript_path": str(transcript)})
+        self.assertEqual(json.loads(path.read_text())["status"], "working")
+        self.run_hook("report", "codex", "Stop", payload=payload)
+        self.assertEqual(json.loads(path.read_text())["status"], "done")
 
     def test_codex_memory_metadata_is_not_reported_as_an_active_session(self):
         transcript = self.directory / "memory.jsonl"
@@ -145,7 +173,7 @@ class DesktopHooks(unittest.TestCase):
         self.assertTrue(all("PRIVATE" not in row and "transcript_path" not in row and "/private/" not in row for row in records))
 
     def test_codex_metadata_with_another_id_does_not_end_the_parent(self):
-        self.run_hook("report", "codex", "UserPromptSubmit", payload={"session_id": "parent"})
+        self.run_hook("report", "codex", "UserPromptSubmit", payload=self.user_payload("parent"))
         path = next((self.directory / "data/events").glob("*.json"))
         before = path.read_text()
         transcript = self.directory / "child.jsonl"
@@ -177,23 +205,34 @@ class DesktopHooks(unittest.TestCase):
                     "session_id": "unavailable", "transcript_path": str(path)
                 })
                 event = json.loads(next((self.directory / "data/events").glob("*.json")).read_text())
-                self.assertEqual(event["status"], "working")
-                self.assertNotIn("codexSessionKind", event)
+                self.assertEqual(event["status"], "ended")
+                self.assertEqual(event.get("codexSessionKind"), "unverified")
 
-    def test_codex_helper_update_hides_matching_legacy_background_reports(self):
+    def test_codex_helper_update_reconciles_legacy_records_and_clears_false_completions(self):
         sessions = [("00000000-0000-0000-0000-000000000001", {"internal": "memory_consolidation"}),
-                    ("00000000-0000-0000-0000-000000000002", "vscode")]
+                    ("00000000-0000-0000-0000-000000000002", "vscode"),
+                    ("00000000-0000-0000-0000-000000000003", None)]
         for session, source in sessions:
             self.run_hook("report", "codex", "Stop", payload={"session_id": session, "cwd": "/private/memory"})
-            transcript = self.directory / "config/.codex/sessions/2026/11/07" / ("rollout-fixture-" + session + ".jsonl")
-            transcript.parent.mkdir(parents=True, exist_ok=True)
-            transcript.write_text(json.dumps({"type": "session_meta", "payload": {"id": session, "source": source}}) + "\n")
+            key = hashlib.sha256(("codex:" + session).encode()).hexdigest()
+            path = self.directory / "data/events" / (key + ".json")
+            legacy = json.loads(path.read_text())
+            legacy.update(status="done", completedAt=legacy["timestamp"])
+            legacy.pop("codexSessionKind", None)
+            path.write_text(json.dumps(legacy))
+            if source is not None:
+                transcript = self.directory / "config/.codex/sessions/2026/11/07" / ("rollout-fixture-" + session + ".jsonl")
+                transcript.parent.mkdir(parents=True, exist_ok=True)
+                transcript.write_text(json.dumps({"type": "session_meta", "payload": {"id": session, "source": source}}) + "\n")
         self.run_hook("install", "codex")
         records = [json.loads(path.read_text()) for path in (self.directory / "data/events").glob("*.json")]
-        self.assertEqual(sorted(row["status"] for row in records), ["done", "ended"])
-        self.run_hook("report", "codex", "Stop", payload={"session_id": sessions[0][0]})
+        self.assertEqual(sorted(row["status"] for row in records), ["done", "ended", "ended"])
+        self.assertEqual({r["codexSessionKind"] for r in records}, {"user", "background", "unverified"})
+        self.assertTrue(all("completedAt" not in r for r in records if r["status"] == "ended"))
+        for session, _ in sessions:
+            self.run_hook("report", "codex", "Stop", payload={"session_id": session})
         records = [json.loads(path.read_text()) for path in (self.directory / "data/events").glob("*.json")]
-        self.assertEqual(sorted(row["status"] for row in records), ["done", "ended"])
+        self.assertEqual(sorted(row["status"] for row in records), ["done", "ended", "ended"])
 
     def test_removal_disables_existing_reports(self):
         self.run_hook("install", "codex")
@@ -214,7 +253,7 @@ class DesktopHooks(unittest.TestCase):
         self.assertNotIn("PRIVATE", text)
 
     def test_sparse_lifecycle_events_preserve_the_last_project(self):
-        self.run_hook("report", "codex", "UserPromptSubmit", payload={"session_id": "sparse", "cwd": "/example/project"})
+        self.run_hook("report", "codex", "UserPromptSubmit", payload=self.user_payload("sparse", cwd="/example/project"))
         self.run_hook("report", "codex", "Stop", payload={"session_id": "sparse"})
         path = next((self.directory / "data/events").glob("*.json"))
         result = json.loads(path.read_text())

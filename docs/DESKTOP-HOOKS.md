@@ -20,7 +20,7 @@ Codex runtime validation checks the observed executable, process start time and 
 
 ## Codex background work
 
-The reporter reads only a bounded, matching first session_meta line from a regular, current-user-owned rollout file opened without following symlinks. Structured internal/subagent sources, memory consolidation, memgen and non-user thread sources are excluded. Persisted classification prevents sparse events reviving these records. Parent IDs are protected and legacy matching records are suppressed. Ordinary titles/projects containing “memory” remain valid. Missing metadata preserves previous behavior; arbitrary future internal formats are not promised.
+The reporter reads only a bounded, matching first session_meta line from a regular, current-user-owned rollout file opened without following symlinks. Structured internal/subagent sources, memory consolidation, memgen and non-user thread sources are excluded. Codex is counted only after a matching header confirms a user session. Internal memory workers can be ephemeral and have no rollout: missing, unsafe or unavailable metadata is unverified and excluded. This also excludes user-created ephemeral sessions until a user source can be verified. Persisted verified user/background classification survives sparse events; later valid metadata can promote an unverified user. Parent IDs are protected. Updating the Codex helper reconciles legacy records and removes false completion timestamps from background/unverified entries; the collector independently rejects every non-user Codex record. Ordinary verified titles/projects containing “memory” remain valid.
 
 ## Verification
 

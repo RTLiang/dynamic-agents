@@ -12,6 +12,7 @@ public struct DesktopHookEvent: Decodable, Sendable {
     public let runtimePID: Int32?
     public let hostBundleIDHint: String?
     public let completedAt: TimeInterval?
+    public let codexSessionKind: String?
     private var completionTime: TimeInterval? {
         guard let value = completedAt ?? (status == "done" ? timestamp : nil), value.isFinite, value >= 0, value <= timestamp else { return nil }
         return value
@@ -25,6 +26,7 @@ public struct DesktopHookEvent: Decodable, Sendable {
 
     public func isCurrent(at now: Date) -> Bool {
         id.count == 64 && id.allSatisfy(\.isHexDigit) && DesktopHookSource(rawValue: source) != nil
+            && (source != "codex" || codexSessionKind == "user")
             && timestamp.isFinite && timestamp <= now.timeIntervalSince1970 + 5
             && now.timeIntervalSince1970 - timestamp < 86_400 && (status != "ended" || completionTime != nil)
             && ancestorPIDs.count <= 40 && ancestorPIDs.allSatisfy { $0 > 1 }

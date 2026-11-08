@@ -5,7 +5,7 @@ import Testing
 private let codexApp = HostApplication(pid: 50, bundleID: "com.openai.codex", name: "ChatGPT", path: "/Applications/Example.app")
 private let liveCodex = ProcessRecord(pid: 51, parentPID: 50, executable: "/usr/local/bin/codex", startedAt: .distantPast)
 private func codexEvent(status: String = "working", project: String = "a", ancestors: [Int32] = [51, 50]) throws -> DesktopHookEvent {
-    let data: [String: Any] = ["id": String(repeating: "a", count: 64), "source": "codex", "status": status,
+    let data: [String: Any] = ["id": String(repeating: "a", count: 64), "source": "codex", "codexSessionKind": "user", "status": status,
                                "sequence": 1234, "timestamp": Date.now.timeIntervalSince1970,
                                "project": project, "ancestorPIDs": ancestors]
     return try JSONDecoder().decode(DesktopHookEvent.self, from: JSONSerialization.data(withJSONObject: data))
