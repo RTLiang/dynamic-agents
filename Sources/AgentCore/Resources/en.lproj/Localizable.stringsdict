@@ -31,8 +31,8 @@
     <dict>
       <key>NSStringFormatSpecTypeKey</key><string>NSStringPluralRuleType</string>
       <key>NSStringFormatValueTypeKey</key><string>lld</string>
-      <key>one</key><string>%lld agent is running</string>
-      <key>other</key><string>%lld agents are running</string>
+      <key>one</key><string>%lld agent is working</string>
+      <key>other</key><string>%lld agents are working</string>
     </dict>
   </dict>
   <key>agent.completed</key>

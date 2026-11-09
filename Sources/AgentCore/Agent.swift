@@ -14,7 +14,7 @@ public enum AgentStatus: String, CaseIterable, Sendable, Codable {
     }
     public var label: String { label(locale: nil) }
     public func label(locale: Locale?) -> String {
-        switch self { case .done: L10n.text("Completed", locale: locale); case .working: L10n.text("Running", locale: locale); case .idle: L10n.text("Idle", locale: locale); case .unknown: L10n.text("Unknown", locale: locale) }
+        switch self { case .done: L10n.text("Completed", locale: locale); case .working: L10n.text("Working", locale: locale); case .idle: L10n.text("Idle", locale: locale); case .unknown: L10n.text("Unknown", locale: locale) }
     }
 }
 

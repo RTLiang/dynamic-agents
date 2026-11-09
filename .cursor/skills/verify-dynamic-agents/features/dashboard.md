@@ -2,7 +2,7 @@
 
 ## User behavior
 
-The native table shows coding Hook sessions. Default order is Running, Completed, Idle, Unknown. Permission requests and user questions remain Running until the turn ends. A row opens its host App, leaving host window/tab/conversation selection unchanged.
+The native table shows coding Hook sessions. Default order is Working, Completed, Idle, Unknown. Permission requests and user questions remain Working until the turn ends. A row opens its host App, leaving host window/tab/conversation selection unchanged.
 
 ## Executable journey
 

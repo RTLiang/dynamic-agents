@@ -1,7 +1,7 @@
 "%@ Done" = "%@ 完成";
-"%@ Run" = "%@ 运行";
+"%@ Work" = "%@ 运行";
 "%@ completed" = "%@ 已完成";
-"%@ running" = "%@ 运行中";
+"%@ working" = "%@ 运行中";
 "%@, %@, %@" = "%@，%@，%@";
 "Action Failed" = "操作未完成";
 "Actions activate the host app. Windows, tabs and conversations are not selected." = "点击会话仅激活宿主 App，不选择窗口、标签页或具体对话。";
@@ -57,7 +57,6 @@
 "Remove" = "移除";
 "Restart the client after installation. Codex requires reviewing and trusting the hooks in Settings > Hooks. Managed policies and remote runtimes may prevent local reporting." = "安装后请重启客户端。Codex 需在 Settings > Hooks 中审核并信任 Hook。托管策略或远程运行环境可能阻止本机上报。";
 "Restart the client and review its hook permissions. New task events will appear automatically." = "请重启客户端并检查 Hook 权限，新的任务事件会自动出现在列表中。";
-"Running" = "运行中";
 "Save" = "保存";
 "Search agents or projects" = "搜索 Agent 或项目";
 "Session" = "会话";
@@ -66,7 +65,7 @@
 "Settings…" = "设置…";
 "Show Completed For" = "完成后保留";
 "Show Menu Bar Icon" = "显示菜单栏图标";
-"Show running or recently completed sessions" = "有运行中或最近完成的 Agent 时显示";
+"Show working or recently completed sessions" = "有运行中或最近完成的 Agent 时显示";
 "Stale" = "过期";
 "Status" = "状态";
 "Status out of date" = "状态已过期";
@@ -93,4 +92,5 @@
 "Updates" = "更新";
 "View Release" = "查看发布页面";
 "Waiting for agents" = "等待 agent 加入";
+"Working" = "运行中";
 "· Status may be out of date" = "· 状态可能已过期";

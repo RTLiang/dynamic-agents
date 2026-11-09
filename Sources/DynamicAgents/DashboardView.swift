@@ -111,7 +111,7 @@ struct DashboardView: View {
                 ))
                 .toggleStyle(.button)
                 .disabled(!store.liveActivity.isSupported || store.liveActivity.isStarting)
-                .help(store.liveActivity.isEnabled ? L10n.text("Turn off Live Activity") : L10n.text("Show running or recently completed sessions"))
+                .help(store.liveActivity.isEnabled ? L10n.text("Turn off Live Activity") : L10n.text("Show working or recently completed sessions"))
             }
             ToolbarItem {
                 Button(L10n.text("Settings"), systemImage: "gearshape") { showingSettings = true }

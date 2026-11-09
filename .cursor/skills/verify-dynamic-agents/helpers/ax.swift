@@ -74,7 +74,7 @@ if action == "doctor" {
     require(!strings().contains(where: { $0.localizedCaseInsensitiveContains("herdr") }), "removed integration leaked into UI")
     press(ready("agent-status-filter"), "Status filter")
     let options = all(root).filter { attribute($0, kAXRoleAttribute) as? String == kAXMenuItemRole }.flatMap(labels)
-    let expected = zh ? ["所有状态", "运行中", "已完成", "空闲", "未知状态"] : ["All Statuses", "Running", "Completed", "Idle", "Unknown"]
+    let expected = zh ? ["所有状态", "运行中", "已完成", "空闲", "未知状态"] : ["All Statuses", "Working", "Completed", "Idle", "Unknown"]
     require(expected.allSatisfy(options.contains), "status filter options missing")
     require(!options.contains(zh ? "等待输入" : "Needs Input"), "removed input status remains in filter")
     save("status-filter")
@@ -114,7 +114,7 @@ if action == "doctor" {
     guard let table = node("agents-table") else { exit(1) }
     let tableValues = all(table).flatMap(labels)
     guard let work = tableValues.firstIndex(of: "Build example"), let done = tableValues.firstIndex(of: "Memory project example"), let idle = tableValues.firstIndex(of: "Review example") else { require(false, "expected fixture sessions absent"); exit(1) }
-    require(work < done && done < idle, "default row order is not Running, Completed, Idle")
+    require(work < done && done < idle, "default row order is not Working, Completed, Idle")
     save("hooks-dashboard")
     guard let cell = all(table).first(where: { labels($0).contains("Build example") }) else { exit(1) }
     var row: AXUIElement? = cell

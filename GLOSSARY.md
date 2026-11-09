@@ -12,7 +12,7 @@ _Avoid_: Task, terminal window
 One round of a user's request and the agent's work before it returns control or waits for a decision.
 _Avoid_: Project, entire task
 
-**Running**:
+**Working**:
 A coding session with a turn still in progress, including pauses for permission or answers.
 _Avoid_: App open, session open
 

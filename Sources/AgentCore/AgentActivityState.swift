@@ -27,7 +27,7 @@ public struct AgentActivityState: Codable, Hashable, Sendable {
     public func compactLabels(locale: Locale? = nil, accessibility: Bool = false) -> [String] {
         let locale = locale ?? self.locale
         guard connected else { return [L10n.text("Offline", locale: locale)] }
-        return [(working, accessibility ? "%@ running" : "%@ Run"), (done, accessibility ? "%@ completed" : "%@ Done")].compactMap { count, key in
+        return [(working, accessibility ? "%@ working" : "%@ Work"), (done, accessibility ? "%@ completed" : "%@ Done")].compactMap { count, key in
             guard count > 0 else { return nil }
             return L10n.format(key, count > 99 ? "99+" : String(count), locale: locale)
         }

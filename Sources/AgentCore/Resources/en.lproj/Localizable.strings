@@ -1,7 +1,7 @@
 "%@ Done" = "%@ Done";
-"%@ Run" = "%@ Run";
+"%@ Work" = "%@ Work";
 "%@ completed" = "%@ completed";
-"%@ running" = "%@ running";
+"%@ working" = "%@ working";
 "%@, %@, %@" = "%@, %@, %@";
 "Action Failed" = "Action Failed";
 "Actions activate the host app. Windows, tabs and conversations are not selected." = "Actions activate the host app. Windows, tabs and conversations are not selected.";
@@ -57,7 +57,6 @@
 "Remove" = "Remove";
 "Restart the client after installation. Codex requires reviewing and trusting the hooks in Settings > Hooks. Managed policies and remote runtimes may prevent local reporting." = "Restart the client after installation. Codex requires reviewing and trusting the hooks in Settings > Hooks. Managed policies and remote runtimes may prevent local reporting.";
 "Restart the client and review its hook permissions. New task events will appear automatically." = "Restart the client and review its hook permissions. New task events will appear automatically.";
-"Running" = "Running";
 "Save" = "Save";
 "Search agents or projects" = "Search agents or projects";
 "Session" = "Session";
@@ -66,7 +65,7 @@
 "Settings…" = "Settings…";
 "Show Completed For" = "Show Completed For";
 "Show Menu Bar Icon" = "Show Menu Bar Icon";
-"Show running or recently completed sessions" = "Show running or recently completed sessions";
+"Show working or recently completed sessions" = "Show working or recently completed sessions";
 "Stale" = "Stale";
 "Status" = "Status";
 "Status out of date" = "Status out of date";
@@ -93,4 +92,5 @@
 "Updates" = "Updates";
 "View Release" = "View Release";
 "Waiting for agents" = "Waiting for agents";
+"Working" = "Working";
 "· Status may be out of date" = "· Status may be out of date";

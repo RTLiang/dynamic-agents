@@ -6,7 +6,7 @@ Follow your coding agents from a native Mac dashboard and system Live Activity.
 
 **[Download the latest DMG](https://github.com/RTLiang/dynamic-agents/releases/latest)**
 
-Dynamic Agents receives lifecycle events from **Pi, Claude Code, Codex App / CLI, Cursor and VS Code Copilot**. It shows running sessions and recent completions. Clicking a session activates its host App.
+Dynamic Agents receives lifecycle events from **Pi, Claude Code, Codex App / CLI, Cursor and VS Code Copilot**. It shows working sessions and recent completions. Clicking a session activates its host App.
 
 ## Requirements and installation
 
@@ -22,14 +22,14 @@ Hook installation preserves unrelated configuration and creates local backups. I
 
 ## Session states
 
-The default order is **Running → Completed → Idle → Unknown**. Search, filter or sort the table to find a session.
+The default order is **Working → Completed → Idle → Unknown**. Search, filter or sort the table to find a session.
 
 | State | Meaning |
 | --- | --- |
-| Running | The current turn is still in progress, including pauses for permissions or answers. |
+| Working | The current turn is still in progress, including pauses for permissions or answers. |
 | Completed | A turn ended recently. This describes a turn boundary, not project completion or a guarantee of success. |
 | Idle | The session is available without active work or a current completion reminder. |
-| Unknown | Current work cannot be verified; it is not counted as running. |
+| Unknown | Current work cannot be verified; it is not counted as Working. |
 
 Completion reminders last **10 minutes** by default. Change **Show Completed For** in Settings from **1–1440 minutes**. Viewing a result keeps the original timer. After expiry, available sessions become Idle and closed sessions disappear. Interrupted Pi runs become Idle; failed runs do not create a completion reminder. Codex requires verified user-session metadata. Internal memory/title/subagent work and sessions with unavailable metadata are excluded, including ephemeral workers without a rollout. User-created ephemeral sessions without verifiable metadata are also excluded.
 
@@ -41,7 +41,7 @@ The host is resolved from process ancestry. For detached CLI processes, a recogn
 
 ## Live Activities and language
 
-Live Activities show **running sessions and recent completions**. Idle sessions remain in the dashboard and menu. With no eligible sessions, the activity hides and monitoring continues. Hiding the menu icon or closing the dashboard also keeps monitoring active.
+Live Activities show **working sessions and recent completions**. Idle sessions remain in the dashboard and menu. With no eligible sessions, the activity hides and monitoring continues. Hiding the menu icon or closing the dashboard also keeps monitoring active. Compact English labels use **2 Work / 1 Done**; full status labels use **Working / Completed**.
 
 The app and Widget support **English and Simplified Chinese**, following the system or the app language chosen in **System Settings → General → Language & Region → Applications**. Session names and project names retain their original text.
 
@@ -51,7 +51,7 @@ Local reports contain a hashed session ID, status, project basename, bounded ses
 
 The optional update check contacts this repository's public GitHub Releases API and opens the release page. It uploads no session data and installs nothing automatically. **When upgrading from 0.1.x, download the DMG manually:** those versions recognize ZIP assets only.
 
-If sessions are missing, check adapter installation and trust, reload the client, and start another turn. If opening fails, check the host is still running and issue a fresh lifecycle event. For a missing Live Activity, enable it in Settings and check for a running or recently completed session.
+If sessions are missing, check adapter installation and trust, reload the client, and start another turn. If opening fails, check the host is still running and issue a fresh lifecycle event. For a missing Live Activity, enable it in Settings and check for a working or recently completed session.
 
 ## Development
 

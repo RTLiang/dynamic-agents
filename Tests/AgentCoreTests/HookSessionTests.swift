@@ -32,7 +32,7 @@ private func session(_ index: Int = 1, status: AgentStatus = .working, completed
                                    "title": "Example", "kind": "codex", "project": "Example", "status": "blocked"]]]
     let state = try JSONDecoder().decode(AgentActivityState.self, from: JSONSerialization.data(withJSONObject: object))
     #expect(state.working == 1 && state.status == .working && state.prominentCount == 1)
-    #expect(state.items.first?.status == .working && state.compactLabels() == ["1 Run"])
+    #expect(state.items.first?.status == .working && state.compactLabels() == ["1 Work"])
     let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any])
     #expect(encoded["blocked"] == nil)
     #expect(!String(decoding: try JSONEncoder().encode(state), as: UTF8.self).contains("blocked"))
