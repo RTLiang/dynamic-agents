@@ -30,7 +30,9 @@ final class LiveActivityController {
     private var nextRequest = Date.distantPast
     private var failedRequests = 0
     private var registryMisses = 0
+    private var requiresForeground = false
     private let now: () -> Date
+    private let isForeground: () -> Bool
     private let logger = Logger(subsystem: "dev.local.dynamicagents", category: "LiveActivityLifecycle")
     var isSupported: Bool {
         #if NATIVE_LIVE_ACTIVITIES
@@ -42,8 +44,9 @@ final class LiveActivityController {
     #if NATIVE_LIVE_ACTIVITIES
     private var activity: Activity<AgentActivityAttributes>?
 
-    init(now: @escaping () -> Date = Date.init) {
+    init(now: @escaping () -> Date = Date.init, isForeground: @escaping () -> Bool = { NSApp?.isActive ?? false }) {
         self.now = now
+        self.isForeground = isForeground
         activity = Activity<AgentActivityAttributes>.activities.first {
             $0.activityState == .active || $0.activityState == .stale
         }
@@ -53,8 +56,9 @@ final class LiveActivityController {
         logger.notice("Initialized: enabled=\(self.isEnabled, privacy: .public), tracked=\(self.isRunning, privacy: .public)")
     }
     #else
-    init(now: @escaping () -> Date = Date.init) {
+    init(now: @escaping () -> Date = Date.init, isForeground: @escaping () -> Bool = { NSApp?.isActive ?? false }) {
         self.now = now
+        self.isForeground = isForeground
         message = L10n.text("Live Activities require the native app with its widget extension.")
     }
     #endif
@@ -69,6 +73,7 @@ final class LiveActivityController {
         isEnabled = true
         nextRequest = .distantPast
         failedRequests = 0
+        requiresForeground = false
         UserDefaults.standard.set(true, forKey: "liveActivityEnabled")
         await update(state, force: true)
     }
@@ -137,6 +142,7 @@ final class LiveActivityController {
             logger.info("Updated: working=\(state.working, privacy: .public), completed=\(state.done, privacy: .public)")
             return
         }
+        guard !requiresForeground || isForeground() else { return }
         guard now() >= nextRequest else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             message = L10n.text("Allow Live Activities for Dynamic Agents in System Settings.")
@@ -147,7 +153,7 @@ final class LiveActivityController {
         generation += 1
         let requestGeneration = generation
         lastRequest = now()
-        logger.notice("Requesting activity: foreground=\(NSApp?.isActive ?? false, privacy: .public), eligible=\(state.total, privacy: .public)")
+        logger.notice("Requesting activity: foreground=\(self.isForeground(), privacy: .public), eligible=\(state.total, privacy: .public)")
         do {
             for previous in Activity<AgentActivityAttributes>.activities {
                 await previous.end(nil, dismissalPolicy: .immediate)
@@ -164,6 +170,7 @@ final class LiveActivityController {
             lastUpdate = now()
             nextRequest = .distantPast
             failedRequests = 0
+            requiresForeground = false
             registryMisses = 0
             message = nil
             logger.notice("Activity request succeeded")
@@ -171,10 +178,16 @@ final class LiveActivityController {
             failedRequests = min(failedRequests + 1, 5)
             let delay = min(pow(2, Double(failedRequests)), 30)
             nextRequest = now().addingTimeInterval(delay)
-            message = error.localizedDescription
             isRunning = false
             let failure = error as NSError
-            logger.error("Activity request failed: domain=\(failure.domain, privacy: .public), code=\(failure.code, privacy: .public), retrySeconds=\(delay, privacy: .public)")
+            if let authorization = error as? ActivityAuthorizationError, authorization == .visibility {
+                requiresForeground = true
+                message = L10n.text("Open Dynamic Agents in the foreground to start its Live Activity. Monitoring continues in the background.")
+                logger.notice("Creation deferred until foreground visibility; code=\(failure.code, privacy: .public)")
+            } else {
+                message = error.localizedDescription
+                logger.error("Activity request failed: domain=\(failure.domain, privacy: .public), code=\(failure.code, privacy: .public), retrySeconds=\(delay, privacy: .public)")
+            }
         }
         #endif
     }
@@ -224,6 +237,8 @@ final class LiveActivityController {
         lastState = nil
         nextRequest = .distantPast
         failedRequests = 0
+        requiresForeground = false
+        message = nil
         #if NATIVE_LIVE_ACTIVITIES
         let previous = activity
         activity = nil

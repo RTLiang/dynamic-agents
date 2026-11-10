@@ -114,6 +114,31 @@ struct LifecycleTests {
             try check(c.isEnabled && c.isRunning && FakeActivitySystem.requests == 2, "foreground activation waited for the background backoff")
             await c.stop()
         }
+        await run("cold background visibility rejection waits for foreground") { clock in
+            FakeActivitySystem.visibilityFailures = 1
+            var foreground = false
+            let c = LiveActivityController(now: { clock.date }, isForeground: { foreground })
+            await c.start(state: feed)
+            clock.advance(60)
+            for _ in 0..<5 { await c.update(feed) }
+            try check(c.isEnabled && !c.isRunning && c.message != nil && FakeActivitySystem.requests == 1, "background visibility failure was hidden or repeatedly requested")
+            foreground = true
+            await c.retryIfNeeded(state: feed)
+            try check(c.isRunning && c.message == nil && FakeActivitySystem.requests == 2, "foreground activation did not recover visibility rejection")
+            await c.stop()
+        }
+        await run("foreground visibility propagation still retries with backoff") { clock in
+            FakeActivitySystem.visibilityFailures = 2
+            var foreground = false
+            let c = LiveActivityController(now: { clock.date }, isForeground: { foreground })
+            await c.start(state: feed)
+            foreground = true
+            await c.retryIfNeeded(state: feed)
+            try check(!c.isRunning && FakeActivitySystem.requests == 2, "second visibility rejection was not retained")
+            clock.advance(4); await c.update(feed)
+            try check(c.isRunning && c.message == nil && FakeActivitySystem.requests == 3, "visibility propagation delay permanently blocked foreground creation")
+            await c.stop()
+        }
         await run("authorization restoration recovers without toggling") { clock in
             FakeActivitySystem.authorized = false
             let c = LiveActivityController(now: { clock.date }); await c.start(state: feed)

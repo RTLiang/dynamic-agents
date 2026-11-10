@@ -47,6 +47,7 @@
 "Offline" = "离线";
 "Open App" = "打开 App";
 "Open Dynamic Agents" = "打开 Dynamic Agents";
+"Open Dynamic Agents in the foreground to start its Live Activity. Monitoring continues in the background." = "请将 Dynamic Agents 切到前台以启动实时活动，后台监控仍在继续。";
 "Opening an app. Try again shortly." = "正在打开 App，请稍后重试。";
 "Opening…" = "正在打开…";
 "Project" = "项目";

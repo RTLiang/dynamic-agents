@@ -47,6 +47,7 @@
 "Offline" = "Offline";
 "Open App" = "Open App";
 "Open Dynamic Agents" = "Open Dynamic Agents";
+"Open Dynamic Agents in the foreground to start its Live Activity. Monitoring continues in the background." = "Open Dynamic Agents in the foreground to start its Live Activity. Monitoring continues in the background.";
 "Opening an app. Try again shortly." = "Opening an app. Try again shortly.";
 "Opening…" = "Opening…";
 "Project" = "Project";

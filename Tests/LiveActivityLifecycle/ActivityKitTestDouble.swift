@@ -3,6 +3,7 @@ import Foundation
 public protocol ActivityAttributes: Codable { associatedtype ContentState: Codable & Hashable }
 public struct ActivityContent<S: Codable & Hashable> { public var state: S; public var staleDate: Date?; public init(state: S, staleDate: Date?) { self.state=state;self.staleDate=staleDate } }
 public enum ActivityState { case active, stale, ended, dismissed }
+public enum ActivityAuthorizationError: Error { case visibility }
 public enum ActivityUIDismissalPolicy { case immediate }
 public enum FakeActivitySystem {
     public static var instances: [Any]=[]
@@ -10,10 +11,11 @@ public enum FakeActivitySystem {
     public static var updates=0
     public static var authorized=true
     public static var failures=0
+    public static var visibilityFailures=0
     public static var pauseNextEnd=false
     public static var endPaused=false
     private static var pendingEnd: CheckedContinuation<Void, Never>?
-    public static func reset() { instances=[];requests=0;updates=0;authorized=true;failures=0;pauseNextEnd=false;endPaused=false }
+    public static func reset() { instances=[];requests=0;updates=0;authorized=true;failures=0;visibilityFailures=0;pauseNextEnd=false;endPaused=false }
     public static func waitForEndIfRequested() async {
         if pauseNextEnd {
             pauseNextEnd=false
@@ -38,6 +40,7 @@ public final class Activity<A: ActivityAttributes>: Identifiable {
     public static var activities: [Activity<A>] { FakeActivitySystem.instances.compactMap { $0 as? Activity<A> } }
     public static func request(attributes: A, content: ActivityContent<A.ContentState>, pushType: String? = nil) throws -> Activity<A> {
         FakeActivitySystem.requests+=1
+        if FakeActivitySystem.visibilityFailures>0 { FakeActivitySystem.visibilityFailures-=1;throw ActivityAuthorizationError.visibility }
         if FakeActivitySystem.failures>0 { FakeActivitySystem.failures-=1;throw NSError(domain:"ActivityKit",code:7) }
         let activity=Activity(content:content);FakeActivitySystem.instances.append(activity);return activity
     }
