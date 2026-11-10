@@ -12,6 +12,10 @@ enum BackgroundHandoffVerification {
             guard let agent = store.agents.first(where: { $0.hostBundleID != nil && $0.isSessionAvailable }),
                   let bundle = agent.hostBundleID else { throw AgentError.message("A live hook session with an observed host app is required.") }
             await store.focus(agent, presentsError: false)
+            for _ in 0..<30 {
+                if !NSApp.isActive && NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundle { break }
+                try await Task.sleep(for: .milliseconds(100))
+            }
             guard store.actionError == nil, !NSApp.isActive,
                   NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundle else {
                 throw AgentError.message(store.actionError ?? "Could not activate the hook's host app.")

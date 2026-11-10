@@ -30,6 +30,8 @@ jobs:
         run: python3 scripts/test-desktop-hooks.py
       - name: Verify Pi lifecycle extension
         run: node scripts/test-pi-hook.mjs
+      - name: Verify Live Activity controller lifecycle (transport double)
+        run: python3 scripts/test-live-activity-lifecycle.py
       - name: Verify app-only scope
         run: python3 scripts/check-app-scope.py
       - name: Verify localization coverage

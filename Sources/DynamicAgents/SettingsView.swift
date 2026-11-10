@@ -32,6 +32,11 @@ struct SettingsView: View {
                             Stepper(L10n.text("Show Completed For"), value: $completionMinutes, in: 1...1440).labelsHidden()
                         }.fixedSize(horizontal: true, vertical: false)
                     }
+                    Button(L10n.text("Restart Live Activity")) {
+                        Task { await store.liveActivity.restart(state: store.activityState) }
+                    }
+                    .accessibilityIdentifier("restart-live-activity")
+                    .disabled(!store.liveActivity.isSupported || !store.liveActivity.isEnabled || store.liveActivity.isStarting || store.activityState.total == 0)
                 }
                 Section(L10n.text("Agent Hooks")) {
                     Button(L10n.text("Manage Agent Hooks…")) { showingHooks = true }

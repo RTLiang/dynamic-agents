@@ -55,6 +55,7 @@
 "Refresh" = "刷新";
 "Refresh Status" = "刷新状态";
 "Remove" = "移除";
+"Restart Live Activity" = "重新显示实时活动";
 "Restart the client after installation. Codex requires reviewing and trusting the hooks in Settings > Hooks. Managed policies and remote runtimes may prevent local reporting." = "安装后请重启客户端。Codex 需在 Settings > Hooks 中审核并信任 Hook。托管策略或远程运行环境可能阻止本机上报。";
 "Restart the client and review its hook permissions. New task events will appear automatically." = "请重启客户端并检查 Hook 权限，新的任务事件会自动出现在列表中。";
 "Save" = "保存";

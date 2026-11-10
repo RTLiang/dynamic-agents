@@ -63,6 +63,10 @@ struct DashboardView: View {
                 HStack {
                     Text(error).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
                     Spacer()
+                    Button(L10n.text("Restart Live Activity")) {
+                        Task { await store.liveActivity.restart(state: store.activityState) }
+                    }
+                    .disabled(!store.liveActivity.isEnabled || store.liveActivity.isStarting || store.activityState.total == 0)
                     Button(L10n.text("Settings…")) { showingSettings = true }
                 }.padding(10)
             }
@@ -110,7 +114,7 @@ struct DashboardView: View {
                     }
                 ))
                 .toggleStyle(.button)
-                .disabled(!store.liveActivity.isSupported || store.liveActivity.isStarting)
+                .disabled(!store.liveActivity.isSupported || (store.liveActivity.isStarting && !store.liveActivity.isEnabled))
                 .help(store.liveActivity.isEnabled ? L10n.text("Turn off Live Activity") : L10n.text("Show working or recently completed sessions"))
             }
             ToolbarItem {

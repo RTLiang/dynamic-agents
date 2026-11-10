@@ -55,6 +55,7 @@
 "Refresh" = "Refresh";
 "Refresh Status" = "Refresh Status";
 "Remove" = "Remove";
+"Restart Live Activity" = "Restart Live Activity";
 "Restart the client after installation. Codex requires reviewing and trusting the hooks in Settings > Hooks. Managed policies and remote runtimes may prevent local reporting." = "Restart the client after installation. Codex requires reviewing and trusting the hooks in Settings > Hooks. Managed policies and remote runtimes may prevent local reporting.";
 "Restart the client and review its hook permissions. New task events will appear automatically." = "Restart the client and review its hook permissions. New task events will appear automatically.";
 "Save" = "Save";

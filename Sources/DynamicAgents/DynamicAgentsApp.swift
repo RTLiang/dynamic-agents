@@ -104,7 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
     }
     func applicationDidBecomeActive(_ notification: Notification) {
-        if let store { verifyLiveActivityIfRequested(store: store) }
+        if let store {
+            verifyLiveActivityIfRequested(store: store)
+            Task { await store.liveActivity.retryIfNeeded(state: store.activityState) }
+        }
     }
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = ProcessInfo.processInfo.arguments

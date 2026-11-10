@@ -51,7 +51,7 @@ Local reports contain a hashed session ID, status, project basename, bounded ses
 
 The optional update check contacts this repository's public GitHub Releases API and opens the release page. It uploads no session data and installs nothing automatically. **When upgrading from 0.1.x, download the DMG manually:** those versions recognize ZIP assets only.
 
-If sessions are missing, check adapter installation and trust, reload the client, and start another turn. If opening fails, check the host is still running and issue a fresh lifecycle event. For a missing Live Activity, enable it in Settings and check for a working or recently completed session.
+If sessions are missing, check adapter installation and trust, reload the client, and start another turn. If opening fails, check the host is still running and issue a fresh lifecycle event. For a missing Live Activity, enable it in Settings and check for a working or recently completed session. If it is enabled with eligible sessions but still absent, use **Restart Live Activity** in Settings to recreate it. Ended or lost activities recover automatically; explicitly dismissed activities remain off.
 
 ## Development
 

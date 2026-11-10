@@ -11,6 +11,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
   swift test --build-system native -j 4
 python3 scripts/test-desktop-hooks.py
 node scripts/test-pi-hook.mjs
+python3 scripts/test-live-activity-lifecycle.py
 python3 scripts/check-localizations.py
 python3 scripts/check-app-scope.py
 python3 scripts/generate-project.py

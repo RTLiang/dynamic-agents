@@ -1,3 +1,5 @@
+import AppKit
+import OSLog
 import SwiftUI
 #if SWIFT_PACKAGE
 import AgentCore
@@ -24,6 +26,12 @@ final class LiveActivityController {
     private(set) var message: String?
     private var lastState: AgentActivityState?
     private var lastUpdate = Date.distantPast
+    private var lastRequest = Date.distantPast
+    private var nextRequest = Date.distantPast
+    private var failedRequests = 0
+    private var registryMisses = 0
+    private let now: () -> Date
+    private let logger = Logger(subsystem: "dev.local.dynamicagents", category: "LiveActivityLifecycle")
     var isSupported: Bool {
         #if NATIVE_LIVE_ACTIVITIES
         if #available(macOS 27.3, *) { return true }
@@ -34,61 +42,112 @@ final class LiveActivityController {
     #if NATIVE_LIVE_ACTIVITIES
     private var activity: Activity<AgentActivityAttributes>?
 
-    init() {
+    init(now: @escaping () -> Date = Date.init) {
+        self.now = now
         activity = Activity<AgentActivityAttributes>.activities.first {
             $0.activityState == .active || $0.activityState == .stale
         }
         isRunning = activity != nil
         isEnabled = UserDefaults.standard.object(forKey: "liveActivityEnabled") as? Bool ?? true
         if let activity { observe(activity) }
+        logger.notice("Initialized: enabled=\(self.isEnabled, privacy: .public), tracked=\(self.isRunning, privacy: .public)")
     }
     #else
-    init() { message = L10n.text("Live Activities require the native app with its widget extension.") }
+    init(now: @escaping () -> Date = Date.init) {
+        self.now = now
+        message = L10n.text("Live Activities require the native app with its widget extension.")
+    }
     #endif
 
     func start(state: AgentActivityState) async {
         guard isSupported else { return }
         #if NATIVE_LIVE_ACTIVITIES
-        if let activity, activity.activityState == .ended || activity.activityState == .dismissed {
-            stateTask?.cancel()
-            self.activity = nil
-            isRunning = false
+        if let current = activity, current.activityState == .ended || current.activityState == .dismissed {
+            clearTrackedActivity()
         }
         #endif
         isEnabled = true
+        nextRequest = .distantPast
+        failedRequests = 0
         UserDefaults.standard.set(true, forKey: "liveActivityEnabled")
+        await update(state, force: true)
+    }
+
+    func retryIfNeeded(state: AgentActivityState) async {
+        guard isEnabled, !isRunning, !isStarting else { return }
+        nextRequest = .distantPast
+        logger.notice("Retrying pending creation after foreground activation")
         await update(state)
+    }
+
+    func restart(state: AgentActivityState) async {
+        guard isSupported else { return }
+        logger.notice("Explicit restart requested")
+        await hide()
+        await start(state: state)
     }
 
     func update(_ state: AgentActivityState, force: Bool = false) async {
         #if NATIVE_LIVE_ACTIVITIES
         guard isEnabled, !isStarting else { return }
-        if let activity, activity.activityState != .active && activity.activityState != .stale {
-            self.activity = nil
-            isRunning = false
-            isEnabled = false
-            UserDefaults.standard.set(false, forKey: "liveActivityEnabled")
-            return
+        isStarting = true
+        defer { isStarting = false }
+        let updateGeneration = generation
+
+        if let current = activity {
+            if current.activityState == .dismissed {
+                disableAfterDismissal()
+                return
+            }
+            if current.activityState == .ended {
+                clearTrackedActivity()
+                logger.notice("Tracked activity ended; keeping monitoring enabled")
+            } else if Activity<AgentActivityAttributes>.activities.contains(where: { $0.id == current.id }) {
+                registryMisses = 0
+            } else if now().timeIntervalSince(lastRequest) >= 5 {
+                registryMisses += 1
+                if registryMisses == 1 { logger.notice("Tracked activity is absent from the system registry; awaiting confirmation") }
+                if registryMisses >= 2 {
+                    clearTrackedActivity()
+                    logger.notice("Recovering an activity missing from the system registry")
+                    await current.end(nil, dismissalPolicy: .immediate)
+                    guard generation == updateGeneration, isEnabled else { return }
+                }
+            }
         }
         guard state.connected, state.total > 0 else {
             await hide()
             return
         }
-        if let activity {
-            guard force || lastState != state || Date.now.timeIntervalSince(lastUpdate) >= 30 else { return }
-            await activity.update(ActivityContent(state: state, staleDate: Date.now.addingTimeInterval(90)))
+        if activity == nil, let existing = Activity<AgentActivityAttributes>.activities.first(where: {
+            $0.activityState == .active || $0.activityState == .stale
+        }) {
+            activity = existing
+            isRunning = true
+            observe(existing)
+            logger.notice("Adopted an existing system activity")
+        }
+        if let current = activity {
+            guard force || lastState != state || now().timeIntervalSince(lastUpdate) >= 30 else { return }
+            await current.update(ActivityContent(state: state, staleDate: now().addingTimeInterval(90)))
+            guard generation == updateGeneration, isEnabled, activity?.id == current.id else { return }
             lastState = state
-            lastUpdate = .now
+            lastUpdate = now()
+            message = nil
+            logger.info("Updated: working=\(state.working, privacy: .public), completed=\(state.done, privacy: .public)")
             return
         }
+        guard now() >= nextRequest else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             message = L10n.text("Allow Live Activities for Dynamic Agents in System Settings.")
+            nextRequest = now().addingTimeInterval(5)
+            logger.notice("Creation deferred: system authorization is disabled")
             return
         }
-        isStarting = true
         generation += 1
         let requestGeneration = generation
-        defer { isStarting = false }
+        lastRequest = now()
+        logger.notice("Requesting activity: foreground=\(NSApp?.isActive ?? false, privacy: .public), eligible=\(state.total, privacy: .public)")
         do {
             for previous in Activity<AgentActivityAttributes>.activities {
                 await previous.end(nil, dismissalPolicy: .immediate)
@@ -96,15 +155,27 @@ final class LiveActivityController {
             }
             activity = try Activity.request(
                 attributes: AgentActivityAttributes(sessionName: L10n.text("Agent Hooks")),
-                content: ActivityContent(state: state, staleDate: Date.now.addingTimeInterval(90)),
+                content: ActivityContent(state: state, staleDate: now().addingTimeInterval(90)),
                 pushType: nil
             )
             isRunning = true
             if let activity { observe(activity) }
             lastState = state
-            lastUpdate = .now
+            lastUpdate = now()
+            nextRequest = .distantPast
+            failedRequests = 0
+            registryMisses = 0
             message = nil
-        } catch { message = error.localizedDescription; isRunning = false }
+            logger.notice("Activity request succeeded")
+        } catch {
+            failedRequests = min(failedRequests + 1, 5)
+            let delay = min(pow(2, Double(failedRequests)), 30)
+            nextRequest = now().addingTimeInterval(delay)
+            message = error.localizedDescription
+            isRunning = false
+            let failure = error as NSError
+            logger.error("Activity request failed: domain=\(failure.domain, privacy: .public), code=\(failure.code, privacy: .public), retrySeconds=\(delay, privacy: .public)")
+        }
         #endif
     }
 
@@ -113,27 +184,50 @@ final class LiveActivityController {
         stateTask?.cancel()
         stateTask = Task { [weak self] in
             for await state in activity.activityStateUpdates {
-                guard let self, self.activity?.id == activity.id else { return }
-                if state == .dismissed || state == .ended {
-                    self.activity = nil
-                    isRunning = false
-                    isEnabled = false
-                    UserDefaults.standard.set(false, forKey: "liveActivityEnabled")
+                guard let self, !Task.isCancelled, self.activity?.id == activity.id else { return }
+                if state == .dismissed {
+                    disableAfterDismissal()
+                    return
+                }
+                if state == .ended {
+                    clearTrackedActivity()
+                    nextRequest = now().addingTimeInterval(2)
+                    logger.notice("System activity ended; enabled preference preserved for recovery")
                     return
                 }
             }
         }
+    }
+
+    private func disableAfterDismissal() {
+        clearTrackedActivity()
+        isEnabled = false
+        UserDefaults.standard.set(false, forKey: "liveActivityEnabled")
+        logger.notice("Activity dismissed; automatic creation disabled")
+    }
+
+    private func clearTrackedActivity() {
+        stateTask?.cancel()
+        stateTask = nil
+        activity = nil
+        isRunning = false
+        registryMisses = 0
+        lastState = nil
     }
     #endif
 
     private func hide() async {
         generation += 1
         stateTask?.cancel()
+        stateTask = nil
+        registryMisses = 0
+        lastState = nil
+        nextRequest = .distantPast
+        failedRequests = 0
         #if NATIVE_LIVE_ACTIVITIES
         let previous = activity
         activity = nil
         isRunning = false
-        lastState = nil
         if let previous { await previous.end(nil, dismissalPolicy: .immediate) }
         #endif
     }

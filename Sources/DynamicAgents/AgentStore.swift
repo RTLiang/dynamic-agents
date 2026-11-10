@@ -74,7 +74,8 @@ final class AgentStore {
         agents = activityFeed.dashboardAgents(from: observed, at: now, completionLifetime: completionLifetime)
         connected = true
         lastUpdated = now
-        await liveActivity.update(activityState)
+        let state = activityState
+        Task { await liveActivity.update(state) }
     }
 
     func focus(_ agent: Agent, presentsError: Bool = true) async {
