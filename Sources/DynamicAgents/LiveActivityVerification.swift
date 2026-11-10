@@ -81,6 +81,7 @@ enum LiveActivityVerification {
                 try await Task.sleep(for: .milliseconds(100))
             }
             report["createdInBackground"] = creationBeganInBackground && !NSApp.isActive && store.liveActivity.isRunning && store.liveActivity.status?.activeCount == 1
+            NSApp.unhide(nil)
             NSApp.activate(ignoringOtherApps: true)
             for _ in 0..<30 {
                 if NSApp.isActive { break }
